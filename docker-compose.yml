@@ -1,0 +1,120 @@
+# ─────────────────────────────────────────────────────────────────────────
+# Multi-Agent Automated SRE Workspace — single-command stack.
+#
+#   docker compose up --build
+#
+# Brings up: Redis (pub/sub + broker), Postgres+pgvector (persistence/memory),
+# FastAPI backend (auto-applies Prisma schema), Celery worker, and the React
+# command center. The backend auto-bootstraps the agent sandbox Docker image
+# (`auto-sre/sandbox:dev`) on first start using the host docker daemon.
+# ─────────────────────────────────────────────────────────────────────────
+
+name: auto-sre
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: auto-sre-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: auto-sre-postgres
+    environment:
+      POSTGRES_USER: sre
+      POSTGRES_PASSWORD: sre
+      POSTGRES_DB: sre
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sre -d sre"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: auto-sre-backend
+    environment:
+      APP_ENV: development
+      DEBUG: "true"
+      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgresql://sre:sre@postgres:5432/sre
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      CORS_ORIGINS: http://localhost:5173,http://localhost:3000
+      DOCKER_SANDBOX_IMAGE: auto-sre/sandbox:dev
+      AUTO_SRE_SANDBOX_IMAGE_BUILD_PATH: /opt/sandbox
+    env_file:
+      - path: .env
+        required: false
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./backend:/app
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: auto-sre-worker
+    environment:
+      APP_ENV: development
+      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgresql://sre:sre@postgres:5432/sre
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      DOCKER_SANDBOX_IMAGE: auto-sre/sandbox:dev
+      AUTO_SRE_SANDBOX_IMAGE_BUILD_PATH: /opt/sandbox
+    env_file:
+      - path: .env
+        required: false
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./backend:/app
+    command: ["celery", "-A", "app.celery_app.celery", "worker", "--loglevel=info"]
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: auto-sre-frontend
+    env_file:
+      - path: .env
+        required: false
+    depends_on:
+      - backend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - frontend-node-modules:/app/node_modules
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+
+volumes:
+  redis-data:
+  pg-data:
+  frontend-node-modules:

@@ -1,0 +1,90 @@
+// Auto-SRE runtime contract (gRPC framing).
+// Mirrors the WebSocket JSON envelope 1:1 — same event types, same channels.
+// Use this for internal worker↔gateway or cross-region fan-out.
+
+syntax = "proto3";
+
+package auto_sre.runtime.v1;
+
+option go_package = "auto_sre/runtime/v1;runtimev1";
+
+// Event types (must match EventType in app/bus/schemas.py).
+enum EventType {
+  EVENT_TYPE_UNSPECIFIED = 0;
+  INCIDENT_CREATED       = 1;
+  INCIDENT_UPDATED       = 2;
+  GRAPH_STARTED          = 10;
+  GRAPH_STEP_STARTED     = 11;
+  GRAPH_STEP_COMPLETED   = 12;
+  GRAPH_STATUS_CHANGED   = 13;
+  GRAPH_COMPLETED        = 14;
+  GRAPH_FAILED           = 15;
+  GRAPH_INTERRUPTED      = 16;
+  GRAPH_RESUMED          = 17;
+  AGENT_STARTED          = 20;
+  AGENT_STEP             = 21;
+  AGENT_LOG              = 22;
+  AGENT_TOKEN_USAGE      = 23;
+  PATCH_GENERATED        = 30;
+  PATCH_TYPING           = 31;
+  PATCH_DIFF             = 32;
+  PATCH_APPLIED          = 33;
+  PENDING_APPROVAL       = 40;
+  REVIEW_DECIDED         = 41;
+  SANDBOX_ACQUIRED       = 50;
+  SANDBOX_RELEASED       = 51;
+  SANDBOX_STDOUT         = 52;
+  MEMORY_SNAPSHOT        = 60;
+  ROI_UPDATED            = 70;
+}
+
+message Envelope {
+  int32  version          = 1;
+  string id               = 2;
+  EventType type          = 3;
+  string channel          = 4;
+  string correlation_id   = 5;
+  string incident_id      = 6;
+  string run_id           = 7;
+  string timestamp        = 8;
+  bytes  payload          = 9; // JSON payload (dict)
+}
+
+message StreamRequest {
+  repeated string channels = 1; // "incident:inc_x", "telemetry", "*"
+}
+
+message ReviewRequest {
+  string incident_id = 1;
+  string run_id      = 2;
+  string patch_ref   = 3;
+  enum Action {
+    APPROVE = 0;
+    REJECT  = 1;
+    MODIFY  = 2;
+  }
+  Action action          = 4;
+  string reason          = 5;
+  map<string, string> modified_files = 6;
+}
+
+message ReviewAck {
+  bool accepted = 1;
+  string error = 2;
+}
+
+message Heartbeat {
+  string run_id = 1;
+}
+
+message HeartbeatAck {
+  int64 server_time_ms = 1;
+}
+
+service RuntimeService {
+  // Server-streaming event fan-out (equivalent to /ws/stream).
+  rpc StreamEvents(StreamRequest) returns (stream Envelope);
+  // HITL decision injection (equivalent to {action:"hitl.review"} over WS).
+  rpc SubmitReview(ReviewRequest) returns (ReviewAck);
+  rpc ReportHeartbeat(Heartbeat) returns (HeartbeatAck);
+}

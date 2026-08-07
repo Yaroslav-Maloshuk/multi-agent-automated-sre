@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+
+# Node
+node_modules/
+frontend/dist/
+frontend/.vite/
+*.tsbuildinfo
+npm-debug.log*
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+!proto/*.key
+
+# Prisma
+backend/generated/
+backend/db/prisma/generated/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Runtime artifacts
+*.log
+logs/
+runtime/
+data/
