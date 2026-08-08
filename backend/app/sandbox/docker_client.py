@@ -91,9 +91,7 @@ class DockerSandboxClient:
             exec_id = container.client.api.exec_create(
                 container_id, ["/bin/sh", "-c", command], stdin=True if stdin_data is not None else False
             )["Id"]
-            output = container.client.api.exec_start(
-                exec_id, socket=False, stdin=stdin_data if stdin_data is not None else None, demux=True
-            )
+            output = container.client.api.exec_start(exec_id, demux=True)
             exit_code = container.client.api.exec_inspect(exec_id)["ExitCode"]
             stdout, stderr = _demux(output)
             return exit_code, stdout, stderr

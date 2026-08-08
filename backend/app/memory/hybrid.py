@@ -64,7 +64,10 @@ class HashingEmbedder(Embedder):
             grams.extend(padded[i : i + n] for i in range(max(1, len(padded) - n + 1)))
         return grams
 
-    def embed(self, text: str) -> list[float]:
+    async def embed(self, text: str) -> list[float]:
+        return await asyncio.to_thread(self._embed, text)
+
+    def _embed(self, text: str) -> list[float]:
         vector = [0.0] * self._dim
         for gram in self._n_grams(text):
             digest = hashlib.blake2b(gram.encode(), digest_size=8).digest()
@@ -72,9 +75,6 @@ class HashingEmbedder(Embedder):
             sign = 1.0 if digest[4] % 2 == 0 else -1.0
             vector[index] += sign
         return vector
-
-    async def embed_async(self, text: str) -> list[float]:
-        return await asyncio.to_thread(self.embed, text)
 
 
 class OpenAIEmbedder(Embedder):
@@ -249,6 +249,7 @@ class PostgresHybridMemory(MemoryStore):
         assert self._pool is not None
         embedder = embedder or HashingEmbedder()
         query_embedding = await embedder.embed(query)
+        vector_literal = "[" + ",".join(repr(float(v)) for v in query_embedding) + "]"
         k = max(top_k * 3, 10)  # candidate pool before RRF fusion
 
         lexical_rows = await self._pool.fetch(
@@ -269,7 +270,7 @@ class PostgresHybridMemory(MemoryStore):
             ORDER BY embedding <=> $1::vector
             LIMIT $2
             """,
-            query_embedding,
+            vector_literal,
             k,
         )
 

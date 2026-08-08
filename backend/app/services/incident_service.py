@@ -44,15 +44,22 @@ class IncidentService:
         incident = self._incidents.get(incident_id)
         if incident is None:
             raise NotFoundError("incident not found", details={"incident_id": incident_id})
-        state = self._states.get(incident_id)
+        state = self._live_state(incident_id)
         return {
             "incident": incident,
             "state": state.to_dict() if state else {"incident_id": incident_id, "status": "QUEUED"},
             "roi": self._roi.for_incident(incident_id),
         }
 
+    def _live_state(self, incident_id: str) -> AgentState | None:
+        """Live in-flight snapshot if the graph is still running, else final."""
+        live = self._executor.latest_state(incident_id)
+        if live is not None:
+            return live
+        return self._states.get(incident_id)
+
     def _status(self, incident_id: str) -> str:
-        state = self._states.get(incident_id)
+        state = self._live_state(incident_id)
         if state is not None and state.status:
             return state.status.value
         return GraphStatus.QUEUED.value

@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import difflib
 import json
+import re
 from uuid import uuid4
 
 from app.agents.base import BaseAgent
@@ -63,21 +64,25 @@ class CodeFixerAgent(BaseAgent):
             )
             await ctx.emit_log(f"[code_fixer] sandbox {handle.id} acquired; fixing {target}")
 
-            new_content, state = await self.complete(
-                ctx,
-                state,
-                _SYSTEM_PROMPT,
-                json.dumps(
-                    {
-                        "target_file": target,
-                        "file_content": old_content,
-                        "root_cause": root_cause,
-                        "verifier_feedback": feedback,
-                    },
-                    ensure_ascii=False,
-                ),
-            )
-            new_content = _strip_fences(new_content)
+            try:
+                new_content, state = await self.complete(
+                    ctx,
+                    state,
+                    _SYSTEM_PROMPT,
+                    json.dumps(
+                        {
+                            "target_file": target,
+                            "file_content": old_content,
+                            "root_cause": root_cause,
+                            "verifier_feedback": feedback,
+                        },
+                        ensure_ascii=False,
+                    ),
+                )
+                new_content = _strip_fences(new_content)
+            except LLMError as exc:
+                await ctx.emit_log(f"[code_fixer] llm unavailable, using rule-based fix ({exc})", level="warn")
+                new_content = _rule_based_fix(target, old_content, root_cause)
             if not new_content.strip():
                 raise LLMError("fixer returned an empty file", details={"target": target})
 
@@ -149,3 +154,34 @@ def _added_lines(diff: str) -> int:
 
 def _removed_lines(diff: str) -> int:
     return sum(1 for line in diff.splitlines() if line.startswith("-") and not line.startswith("---"))
+
+
+# Deterministic, syntax-safe remediation rules used when no LLM is available.
+# Mirrors the graceful degradation already present in Planner and Log Analyzer
+# so the engine never stalls on model availability.
+_RULE_BASED_PATTERNS: tuple[tuple[str, str], ...] = (
+    (r"(redis\.Redis\.from_url\([^)]*?)\s*\)", r"\1, socket_connect_timeout=3, socket_timeout=5)"),
+    (r"(redis\.Redis\([^)]*?)\s*\)", r"\1, socket_connect_timeout=3, socket_timeout=5)"),
+    (r"(requests\.(?:get|post|put|patch|delete)\([^,)]+)([^)]*)\)", r"\1\2, timeout=10)"),
+    (r"(sqlite3\.connect\([^,)]+)([^)]*)\)", r"\1\2, timeout=5)"),
+)
+
+
+def _rule_based_fix(target: str, old_content: str, root_cause: str) -> str:
+    content = old_content
+    changed = False
+    for pattern, repl in _RULE_BASED_PATTERNS:
+        content, count = re.subn(pattern, repl, content)
+        changed = changed or count > 0
+    if not changed:
+        content = _annotate_fix(content, target, root_cause)
+    return content
+
+
+def _annotate_fix(content: str, target: str, root_cause: str) -> str:
+    banner = (
+        f"# Auto-SRE remediation for {target}\n"
+        f"# root cause: {root_cause}\n"
+        "# no matching remediation rule applied; behavior unchanged\n"
+    )
+    return banner + ("" if content.startswith("\n") else "\n") + content

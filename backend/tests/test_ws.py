@@ -39,7 +39,8 @@ def test_ws_streams_pending_approval_and_hitl_review(ws_client: TestClient) -> N
                 "payload": {"action": "approve", "reason": "ws approved", "patch_ref": patch_ref},
             }
         )
-        assert _recv_type(ws) == "review.accepted"
+        # Concurrent graph events may interleave; wait for the ack specifically.
+        assert _recv_until_type(ws, "review.accepted")["type"] == "review.accepted"
 
         state = _poll_terminal(ws_client, incident_id)
         assert state["status"] == "COMPLETED"

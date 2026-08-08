@@ -74,6 +74,10 @@ class GraphExecutor:
             )
         fut.set_result(review)
 
+    def latest_state(self, incident_id: str) -> AgentState | None:
+        """Most recent live snapshot of a run, available mid-flight."""
+        return self._latest_state.get(incident_id)
+
     async def interrupt(self, incident_id: str) -> AgentState:
         run_id = self._run_by_incident.get(incident_id)
         if not run_id:
@@ -124,6 +128,7 @@ class GraphExecutor:
             state=initial,
         )
         state = initial.replace(status=GraphStatus.RUNNING)
+        self._latest_state[state.incident_id] = state
         await ctx.emit(EventType.GRAPH_STARTED, incident=state.incident, run_id=state.run_id)
         await ctx.emit(EventType.GRAPH_STATUS_CHANGED, status=state.status.value)
 
@@ -253,6 +258,8 @@ class GraphExecutor:
             summary=summary,
         )
         await ctx.emit(EventType.GRAPH_STATUS_CHANGED, status=result.status.value)
+        self._latest_state[result.incident_id] = result
+        await ctx.emit(EventType.MEMORY_SNAPSHOT, state=result.to_dict())
         return result
 
 

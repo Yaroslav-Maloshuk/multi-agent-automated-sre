@@ -76,6 +76,7 @@ async def hitl_gate_node(ctx: AgentContext, state: AgentState) -> tuple[AgentSta
         action="approve|reject|modify",
     )
     state = state.replace(status=GraphStatus.PENDING_APPROVAL)
+    await ctx.emit(EventType.MEMORY_SNAPSHOT, state=state.to_dict())
 
     fut = ctx.approval_registry.get(state.incident_id)
     if fut is None:
