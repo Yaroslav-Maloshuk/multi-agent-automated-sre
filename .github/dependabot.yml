@@ -22,6 +22,11 @@ updates:
     groups:
       npm-runtime:
         patterns: ["*"]
+    # typescript-eslint@8 caps typescript at <6.1.0, so a TS 7 major bump can
+    # never resolve; keep typescript on compatible majors.
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
