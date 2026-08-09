@@ -3,4 +3,4 @@
 # stack stays lean; install into your local venv with `make local-deps`.
 torch>=2.3.0
 transformers>=4.45.0
-accelerate>=0.30.0
+accelerate>=1.14.0
