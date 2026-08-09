@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from collections import deque
-from typing import Deque
 
 from app.llm.base import LLMClient, LLMResponse
 
@@ -26,8 +25,8 @@ INCIDENT = {
 class FakeLLM(LLMClient):
     """Deterministic LLM keyed on the system prompt, with a scripted fix queue."""
 
-    def __init__(self, fix_contents: Deque[str] | None = None) -> None:
-        self.fix_contents: Deque[str] = fix_contents or deque([GOOD_SERVICE])
+    def __init__(self, fix_contents: deque[str] | None = None) -> None:
+        self.fix_contents: deque[str] = fix_contents or deque([GOOD_SERVICE])
         self.calls: list[tuple[str, str]] = []
 
     async def complete(self, system: str, user: str) -> LLMResponse:

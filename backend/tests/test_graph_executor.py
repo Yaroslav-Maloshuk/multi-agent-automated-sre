@@ -7,7 +7,7 @@ from collections import deque
 from app.bus.schemas import EventType, HITLReview, ReviewAction
 from app.graph.state import GraphStatus
 from tests.conftest import build_executor, wait_for_event
-from tests.fakes import BROKEN_SERVICE, GOOD_SERVICE, FakeLLM, INCIDENT
+from tests.fakes import BROKEN_SERVICE, GOOD_SERVICE, INCIDENT, FakeLLM
 
 
 async def test_full_run_reaches_completed(bus, memory, pool, settings, events) -> None:
@@ -117,7 +117,7 @@ async def test_interrupt_during_approval(bus, memory, pool, settings, events) ->
     llm = FakeLLM()
     executor = build_executor(bus, memory, pool, settings, llm)
 
-    task = asyncio.create_task(executor.run(INCIDENT))
+    asyncio.create_task(executor.run(INCIDENT))
     await wait_for_event(events, EventType.PENDING_APPROVAL)
 
     state = await executor.interrupt("inc_test")

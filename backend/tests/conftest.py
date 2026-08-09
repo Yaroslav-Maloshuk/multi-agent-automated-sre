@@ -70,9 +70,9 @@ def build_executor(bus, memory, pool, settings, llm: LLMClient) -> GraphExecutor
     return GraphExecutor(bus=bus, llm=llm, sandbox_pool=pool, memory=memory, settings=settings)
 
 
-async def wait_for_event(seen: list, type_, timeout: float = 5.0):
+async def wait_for_event(seen: list, type_, timeout_s: float = 5.0):
     loop = asyncio.get_running_loop()
-    deadline = loop.time() + timeout
+    deadline = loop.time() + timeout_s
     while loop.time() < deadline:
         for envelope in seen:
             if envelope.type is type_ or envelope.type.value == type_.value:

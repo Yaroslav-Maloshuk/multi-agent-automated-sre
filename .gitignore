@@ -30,7 +30,7 @@ npm-debug.log*
 
 # Prisma
 backend/generated/
-backend/db/prisma/generated/
+backend/db/generated/
 
 # OS / editor
 .DS_Store

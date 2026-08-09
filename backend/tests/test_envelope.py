@@ -1,7 +1,14 @@
 """Envelope schema contract."""
 from __future__ import annotations
 
-from app.bus.schemas import Channel, EventEnvelope, EventType, HITLReview, ReviewAction, WSClientMessage
+from app.bus.schemas import (
+    Channel,
+    EventEnvelope,
+    EventType,
+    HITLReview,
+    ReviewAction,
+    WSClientMessage,
+)
 
 
 def test_envelope_defaults() -> None:

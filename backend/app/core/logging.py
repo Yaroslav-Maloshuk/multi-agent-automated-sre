@@ -5,7 +5,6 @@ single grep reconstructs an entire agent trajectory.
 """
 from __future__ import annotations
 
-import json
 import logging
 import sys
 from contextvars import ContextVar

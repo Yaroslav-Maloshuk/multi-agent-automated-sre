@@ -82,7 +82,7 @@ class EventEnvelope(BaseModel):
         return self.model_dump_json().encode()
 
     @classmethod
-    def parse(cls, raw: bytes | str) -> "EventEnvelope":
+    def parse(cls, raw: bytes | str) -> EventEnvelope:
         return cls.model_validate_json(raw)
 
 

@@ -112,9 +112,11 @@ class LocalSandboxHandle(SandboxHandle):
                 duration_seconds=time.monotonic() - started,
             )
         except subprocess.TimeoutExpired as exc:
+            raw_stdout = exc.stdout or ""
+            stdout = raw_stdout.decode(errors="replace") if isinstance(raw_stdout, bytes) else raw_stdout
             return SandboxExecResult(
                 exit_code=-1,
-                stdout=exc.stdout or "",
+                stdout=stdout,
                 stderr="command timed out",
                 duration_seconds=time.monotonic() - started,
             )
@@ -203,11 +205,13 @@ class DockerSandboxHandle(SandboxHandle):
         return stdout
 
     def write_file(self, path: str, content: str) -> None:
+        import base64
+
         safe = _safe_rel_path(path)
+        payload = base64.b64encode(content.encode("utf-8")).decode("ascii")
         self._client.exec(
             self.container_id or "",
-            f"mkdir -p '$(dirname {self.workdir}/{safe})' && cat > '{self.workdir}/{safe}'",
-            stdin_data=content.encode(),
+            f"mkdir -p '$(dirname {self.workdir}/{safe})' && printf '%s' '{payload}' | base64 --decode > '{self.workdir}/{safe}'",
         )
 
     def run(self, command: str, *, cwd: str | None = None, timeout: int = 120) -> SandboxExecResult:

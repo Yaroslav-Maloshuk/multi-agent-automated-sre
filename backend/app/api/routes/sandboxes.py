@@ -1,6 +1,8 @@
 """Sandbox pool control surface."""
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Depends
 
 from app.api.deps import get_pool
@@ -11,7 +13,7 @@ router = APIRouter()
 
 
 @router.get("/sandboxes")
-async def sandbox_stats(pool: SandboxPool = Depends(get_pool)) -> dict:
+async def sandbox_stats(pool: SandboxPool = Depends(get_pool)) -> dict[str, Any]:
     stats = await pool.stats()
     return {
         "backend": stats.backend,
@@ -22,7 +24,7 @@ async def sandbox_stats(pool: SandboxPool = Depends(get_pool)) -> dict:
 
 
 @router.post("/sandboxes/warm")
-async def warm_sandboxes(payload: SandboxWarmRequest | None = None, pool: SandboxPool = Depends(get_pool)) -> dict:
+async def warm_sandboxes(payload: SandboxWarmRequest | None = None, pool: SandboxPool = Depends(get_pool)) -> dict[str, Any]:
     count = payload.count if payload else None
     created = await pool.warm(count)
     stats = await pool.stats()

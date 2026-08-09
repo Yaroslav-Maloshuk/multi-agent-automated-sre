@@ -71,6 +71,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./backend:/app
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
   worker:
@@ -95,6 +96,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./backend:/app
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
     command: ["celery", "-A", "app.celery_app.celery", "worker", "--loglevel=info"]
 
   frontend:

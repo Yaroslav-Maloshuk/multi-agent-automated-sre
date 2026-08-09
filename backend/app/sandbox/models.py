@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import Any
 
 from app.core.errors import SandboxError
 
@@ -53,6 +52,5 @@ class SandboxHandle:
     def destroy(self) -> None:
         raise NotImplementedError
 
-    @property
     def full_path(self, relative: str) -> str:
         return f"{self.workdir.rstrip('/')}/{relative.lstrip('/')}"

@@ -6,9 +6,10 @@ the UI's React Flow rendering one-to-one.
 """
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Awaitable, Callable
 
+from app.graph.context import AgentContext
 from app.graph.state import AgentName, AgentState
 
 
@@ -72,8 +73,8 @@ ROOT_NODES = tuple(spec.name for spec in GRAPH_SPEC.values() if not spec.deps)
 NODE_ORDER = tuple(spec.name for spec in sorted(GRAPH_SPEC.values(), key=lambda s: s.name.value))
 
 
-# Handler signatures: async (ctx, state) -> AgentState
-NodeHandler = Callable[["AgentContext", AgentState], Awaitable[AgentState]]
+# Handler signatures: async (ctx, state) -> (new_state, summary)
+NodeHandler = Callable[[AgentContext, AgentState], Awaitable[tuple[AgentState, str]]]
 
 
 def build_node_map() -> dict[str, NodeHandler]:

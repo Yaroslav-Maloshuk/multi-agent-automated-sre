@@ -9,7 +9,8 @@ from __future__ import annotations
 import asyncio
 import logging
 from abc import ABC, abstractmethod
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
 
 from app.bus.schemas import EventEnvelope
 from app.core.config import Settings
@@ -96,7 +97,7 @@ class RedisEventBus(EventBus):
             return
         import redis.asyncio as aioredis
 
-        self._redis = aioredis.from_url(self._url, decode_responses=True)
+        self._redis = aioredis.from_url(self._url, decode_responses=True)  # type: ignore[no-untyped-call]
         await self._redis.ping()
         self._pubsub = self._redis.pubsub()
         await self._pubsub.psubscribe(f"{self._namespace}:*")

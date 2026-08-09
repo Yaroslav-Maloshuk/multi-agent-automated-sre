@@ -96,7 +96,7 @@ async def hitl_gate_node(ctx: AgentContext, state: AgentState) -> tuple[AgentSta
                 )
                 timed_out = dc_replace(patch, status=PatchStatus.REJECTED, review_reason="approval timeout")
                 return state.replace(patch=timed_out).finish(GraphStatus.CANCELLED), "Human gate: timed out"
-            review: HITLReview = done.pop().result()
+            review = done.pop().result()
         else:
             review = await asyncio.shield(fut)
     except asyncio.CancelledError:

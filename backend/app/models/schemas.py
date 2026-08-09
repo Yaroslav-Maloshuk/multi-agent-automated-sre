@@ -1,6 +1,8 @@
 """API request/response models (thin; domain state lives in graph.state)."""
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 from app.bus.schemas import ReviewAction
@@ -15,7 +17,7 @@ class IncidentCreate(BaseModel):
     message: str | None = None
     target_file: str | None = None
     files: dict[str, str] = Field(default_factory=dict)
-    raw_payload: dict = Field(default_factory=dict)
+    raw_payload: dict[str, Any] = Field(default_factory=dict)
     auto_run: bool = False
 
 

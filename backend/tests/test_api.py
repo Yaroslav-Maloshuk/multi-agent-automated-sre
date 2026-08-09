@@ -7,7 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
-from tests.fakes import FakeLLM, INCIDENT
+from tests.fakes import INCIDENT, FakeLLM
 
 TERMINAL = {"COMPLETED", "FAILED", "CANCELLED", "INTERRUPTED"}
 

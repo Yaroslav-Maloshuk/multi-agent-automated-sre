@@ -103,7 +103,7 @@ class TokenUsage:
     input_tokens: int = 0
     output_tokens: int = 0
 
-    def __add__(self, other: "TokenUsage") -> "TokenUsage":
+    def __add__(self, other: TokenUsage) -> TokenUsage:
         return TokenUsage(
             input_tokens=self.input_tokens + other.input_tokens,
             output_tokens=self.output_tokens + other.output_tokens,
@@ -149,10 +149,10 @@ class AgentState:
 
     # ── Transition helpers ──────────────────────────────────────────────
 
-    def replace(self, **changes: Any) -> "AgentState":
+    def replace(self, **changes: Any) -> AgentState:
         return replace(self, **changes)
 
-    def record_step(self, node: AgentName, summary: str, snapshot_ref: str | None = None) -> "AgentState":
+    def record_step(self, node: AgentName, summary: str, snapshot_ref: str | None = None) -> AgentState:
         started = self.completed_at or self.created_at
         step = GraphStepRecord(
             step_index=self.step_index + 1,
@@ -168,10 +168,10 @@ class AgentState:
             timeline=self.timeline + (step,),
         )
 
-    def finish(self, status: GraphStatus) -> "AgentState":
+    def finish(self, status: GraphStatus) -> AgentState:
         return self.replace(status=status, completed_at=_now_iso())
 
-    def add_tokens(self, usage: TokenUsage) -> "AgentState":
+    def add_tokens(self, usage: TokenUsage) -> AgentState:
         return self.replace(token_usage=self.token_usage + usage)
 
     def to_dict(self) -> dict[str, Any]:

@@ -14,6 +14,11 @@ WORKDIR /app
 COPY backend/requirements.txt ./requirements.txt
 RUN pip install -r requirements.txt
 
+# Local HuggingFace LLM provider (CPU-only torch keeps the image lean).
+COPY backend/requirements-local.txt ./requirements-local.txt
+RUN pip install --index-url https://download.pytorch.org/whl/cpu torch \
+    && pip install -r requirements-local.txt
+
 COPY backend/ ./
 # Sandbox build context (used to auto-bootstrap the agent sandbox image).
 COPY sandbox/ /opt/sandbox/

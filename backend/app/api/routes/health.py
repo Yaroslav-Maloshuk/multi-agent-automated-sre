@@ -1,6 +1,8 @@
 """Health probes."""
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Depends, Request
 
 from app.api.deps import get_bus, get_pool
@@ -11,7 +13,7 @@ router = APIRouter()
 
 
 @router.get("/health")
-async def health(request: Request, bus: EventBus = Depends(get_bus), pool: SandboxPool = Depends(get_pool)) -> dict:
+async def health(request: Request, bus: EventBus = Depends(get_bus), pool: SandboxPool = Depends(get_pool)) -> dict[str, Any]:
     deps = {
         "bus": "ok" if await bus.healthy() else "unreachable",
         "sandbox_pool": "ok" if pool else "missing",

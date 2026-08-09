@@ -36,8 +36,8 @@ celery.conf.update(
 )
 
 
-@celery.task(name="auto_sre.run_incident", bind=True)
-def run_incident_task(self, incident_id: str, incident: dict[str, Any]) -> dict[str, Any]:
+@celery.task(name="auto_sre.run_incident", bind=True)  # type: ignore[untyped-decorator]
+def run_incident_task(self, incident_id: str, incident: dict[str, Any]) -> dict[str, Any]:  # type: ignore[no-untyped-def]
     """Resolve an incident through the agent graph, inside the worker."""
     return asyncio.run(_resolve(incident_id, incident))
 

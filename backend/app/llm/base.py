@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from typing import Any
 
 from app.core.errors import LLMError
 
@@ -23,7 +24,7 @@ class LLMResponse:
 class ChatMessage:
     role: str
     content: str
-    extra: dict = field(default_factory=dict)
+    extra: dict[str, Any] = field(default_factory=dict)
 
 
 class LLMClient(ABC):
@@ -33,7 +34,7 @@ class LLMClient(ABC):
     async def complete(self, system: str, user: str) -> LLMResponse:
         raise NotImplementedError
 
-    async def complete_json(self, system: str, user: str) -> tuple[dict, LLMResponse]:
+    async def complete_json(self, system: str, user: str) -> tuple[dict[str, Any], LLMResponse]:
         response = await self.complete(system, user)
         return _extract_json(response.text), response
 
@@ -44,7 +45,7 @@ def estimate_tokens(text: str) -> int:
     return max(1, len(text) // 4)
 
 
-def _extract_json(text: str) -> dict:
+def _extract_json(text: str) -> dict[str, Any]:
     import json
     import re
 

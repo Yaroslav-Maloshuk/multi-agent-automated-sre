@@ -12,7 +12,7 @@ import uuid
 from typing import Any
 
 from app.bus.redis_bus import EventBus
-from app.bus.schemas import Channel, EventType, HITLReview
+from app.bus.schemas import Channel, EventEnvelope, EventType, HITLReview
 from app.core.config import Settings
 from app.core.errors import ConflictError, NotFoundError
 from app.graph.executor import GraphExecutor
@@ -104,9 +104,9 @@ class IncidentService:
             self._roi.record(state)
         except Exception:  # noqa: BLE001
             logger.exception("incident run failed: %s", incident_id)
-            state = self._states.get(incident_id)
-            if state is not None:
-                failed = state.replace(error="run task failed").finish(GraphStatus.FAILED)
+            stored = self._states.get(incident_id)
+            if stored is not None:
+                failed = stored.replace(error="run task failed").finish(GraphStatus.FAILED)
                 self._states[incident_id] = failed
         finally:
             self._tasks.pop(incident_id, None)
@@ -128,9 +128,7 @@ class IncidentService:
         return await self.run(incident_id)
 
 
-def _env(type_: EventType, channel: str, payload: dict[str, Any]):
-    from app.bus.schemas import EventEnvelope
-
+def _env(type_: EventType, channel: str, payload: dict[str, Any]) -> EventEnvelope:
     return EventEnvelope(type=type_, channel=channel, payload=payload)
 
 

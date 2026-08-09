@@ -3,6 +3,7 @@ endpoint)."""
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from app.agents.base import BaseAgent
 from app.agents.code_fixer import CodeFixerAgent
@@ -76,7 +77,7 @@ def build_agent(name: AgentName) -> BaseAgent:
         raise ValueError(f"unknown agent: {name}") from exc
 
 
-def agent_catalog() -> list[dict]:
+def agent_catalog() -> list[dict[str, Any]]:
     return [
         {
             "name": info.name.value,

@@ -5,7 +5,7 @@ savings vs. the human MTTR baseline at a loaded hourly rate.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from app.core.config import Settings

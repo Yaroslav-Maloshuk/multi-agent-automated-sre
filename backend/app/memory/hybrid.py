@@ -14,7 +14,7 @@ import re
 import threading
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 from app.core.config import Settings
@@ -91,7 +91,7 @@ class OpenAIEmbedder(Embedder):
         assert self._settings.openai_api_key, "OPENAI_API_KEY not configured"
         client = AsyncOpenAI(api_key=self._settings.openai_api_key)
         resp = await client.embeddings.create(model="text-embedding-3-small", input=[text])
-        return resp.data[0].embedding
+        return list(resp.data[0].embedding)
 
 
 def _embedder_for(settings: Settings) -> Embedder:
@@ -318,7 +318,7 @@ def json_dumps(value: Any) -> str:
 def json_loads(value: str) -> dict[str, Any]:
     import json
 
-    return json.loads(value)
+    return cast(dict[str, Any], json.loads(value))
 
 
 def build_memory(settings: Settings) -> MemoryStore:

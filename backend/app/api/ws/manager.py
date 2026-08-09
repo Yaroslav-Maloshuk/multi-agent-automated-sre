@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from collections.abc import Awaitable, Callable
 
 from fastapi import WebSocket, WebSocketDisconnect
 
@@ -16,6 +16,9 @@ from app.core.config import Settings
 logger = logging.getLogger(__name__)
 
 HEARTBEAT = "heartbeat.ping"
+
+ReviewHandler = Callable[[HITLReview], Awaitable[None]]
+IncidentHandler = Callable[[str], Awaitable[None]]
 
 
 class ConnectionManager:
@@ -91,7 +94,14 @@ class ConnectionManager:
 
     # ── Inbound control messages ────────────────────────────────────────
 
-    async def handle_inbound(self, websocket: WebSocket, message: WSClientMessage, on_review, on_resume, on_interrupt) -> None:
+    async def handle_inbound(
+        self,
+        websocket: WebSocket,
+        message: WSClientMessage,
+        on_review: ReviewHandler,
+        on_resume: IncidentHandler,
+        on_interrupt: IncidentHandler,
+    ) -> None:
         if message.action is ClientAction.SUBSCRIBE and message.channel:
             await self.subscribe(websocket, message.channel)
             await websocket.send_json({"type": "subscribed", "channel": message.channel})
@@ -123,7 +133,9 @@ class ConnectionManager:
             except Exception:  # noqa: BLE001
                 return
 
-    async def run_socket(self, websocket: WebSocket, on_review, on_resume, on_interrupt) -> None:
+    async def run_socket(
+        self, websocket: WebSocket, on_review: ReviewHandler, on_resume: IncidentHandler, on_interrupt: IncidentHandler
+    ) -> None:
         """Own the socket loop: initial channels + inbound handling + heartbeat."""
         await self.connect(websocket)
         heartbeat = asyncio.create_task(self.heartbeat(websocket))

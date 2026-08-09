@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: help infra up down logs build dev backend frontend test test-watch lint typecheck prisma-gen proto-gen sandbox-image db-migrate
+.PHONY: help infra up down logs build dev backend frontend test test-watch lint typecheck prisma-gen proto-gen sandbox-image db-migrate local-deps
 
 help:
 	@echo "auto-sre-workspace — Make targets"
@@ -15,6 +15,7 @@ help:
 	@echo "  make lint            Lint backend (ruff) + frontend (eslint)"
 	@echo "  make typecheck       Typecheck backend (mypy) + frontend (tsc)"
 	@echo "  make db-migrate      Apply Prisma schema migrations"
+	@echo "  make local-deps      Install torch/transformers for the local HF model"
 
 VENV := .venv
 PY := $(VENV)/bin/python
@@ -48,6 +49,9 @@ proto-gen:
 
 db-migrate:
 	cd backend && prisma migrate dev --schema=db/prisma/schema.prisma
+
+local-deps:
+	$(VENV)/bin/pip install -r backend/requirements-local.txt
 
 backend:
 	. $(VENV)/bin/activate && uvicorn app.main:app --reload --port 8000

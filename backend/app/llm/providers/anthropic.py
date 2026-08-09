@@ -27,7 +27,9 @@ class AnthropicProvider(LLMClient):
         except Exception as exc:  # noqa: BLE001
             raise LLMError(f"anthropic request failed: {exc}") from exc
 
-        text = "".join(block.text for block in resp.content if getattr(block, "type", "") == "text")
+        from anthropic.types import TextBlock
+
+        text = "".join(block.text for block in resp.content if isinstance(block, TextBlock))
         usage = getattr(resp, "usage", None)
         return LLMResponse(
             text=text,

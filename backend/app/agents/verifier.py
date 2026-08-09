@@ -30,13 +30,13 @@ class VerifierAgent(BaseAgent):
                 await asyncio_run_sync(handle.write_file, patch_file.path, patch_file.new_content)
 
             await ctx.emit_log(f"[verifier] running pytest (attempt {attempt})")
-            test_result = await asyncio_run(handle.run, "pytest -q --tb=short", timeout=240)
+            test_result = await asyncio_run(handle.run, "pytest -q --tb=short", timeout_s=240)
 
             changed = [pf.path for pf in patch.files]
             lint_output = ""
             lint_ok = True
             if changed:
-                lint = await asyncio_run(handle.run, f"flake8 {' '.join(changed)}", timeout=60)
+                lint = await asyncio_run(handle.run, f"flake8 {' '.join(changed)}", timeout_s=60)
                 lint_output = lint.stdout + lint.stderr
                 # A missing linter is a skip, not a failure.
                 lint_ok = lint.ok or _linter_unavailable(lint.exit_code, lint_output)
@@ -101,10 +101,10 @@ def _truncate(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[:limit] + "\n…(truncated)"
 
 
-async def asyncio_run(fn: Any, command: str, *, timeout: int) -> Any:
+async def asyncio_run(fn: Any, command: str, *, timeout_s: int) -> Any:
     import asyncio
 
-    return await asyncio.to_thread(fn, command, timeout=timeout)
+    return await asyncio.to_thread(fn, command, timeout=timeout_s)
 
 
 async def asyncio_run_sync(fn: Any, *args: Any) -> Any:

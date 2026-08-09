@@ -22,7 +22,7 @@ from app.bus.schemas import EventType, HITLReview
 from app.core.config import Settings
 from app.core.errors import ConflictError, GraphError, GraphNotReadyError
 from app.graph.context import AgentContext
-from app.graph.graph import NODE_ORDER, GRAPH_SPEC, NodeHandler
+from app.graph.graph import GRAPH_SPEC, NODE_ORDER, NodeHandler
 from app.graph.state import AgentName, AgentState, GraphStatus, create_initial_state
 from app.llm.base import LLMClient
 from app.memory.hybrid import MemoryStore

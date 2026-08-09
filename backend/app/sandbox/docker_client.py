@@ -85,12 +85,10 @@ class DockerSandboxClient:
         except Exception as exc:  # noqa: BLE001
             raise SandboxError(f"failed to create sandbox container: {exc}") from exc
 
-    def exec(self, container_id: str, command: str, *, stdin_data: bytes | None = None, timeout: int = 120) -> tuple[int, str, str]:
+    def exec(self, container_id: str, command: str, *, timeout: int = 120) -> tuple[int, str, str]:
         container = self._get().containers.get(container_id)
         try:
-            exec_id = container.client.api.exec_create(
-                container_id, ["/bin/sh", "-c", command], stdin=True if stdin_data is not None else False
-            )["Id"]
+            exec_id = container.client.api.exec_create(container_id, ["/bin/sh", "-c", command])["Id"]
             output = container.client.api.exec_start(exec_id, demux=True)
             exit_code = container.client.api.exec_inspect(exec_id)["ExitCode"]
             stdout, stderr = _demux(output)

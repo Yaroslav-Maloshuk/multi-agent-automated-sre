@@ -7,7 +7,9 @@ app-scoped context, then exposes the REST + WebSocket contract surfaces.
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,7 +19,7 @@ from app.api.ws.events import router as ws_router
 from app.api.ws.manager import ConnectionManager
 from app.bus.redis_bus import build_event_bus
 from app.core.config import Settings, get_settings
-from app.core.errors import register_exception_handlers, SandboxError
+from app.core.errors import SandboxError, register_exception_handlers
 from app.core.logging import configure_logging
 from app.graph.executor import GraphExecutor
 from app.llm.base import LLMClient
@@ -31,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings: Settings = app.state.settings
     configure_logging(settings.log_level)
 
@@ -104,7 +106,7 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
     app.include_router(ws_router)
 
     @app.get("/", include_in_schema=False)
-    async def root() -> dict:
+    async def root() -> dict[str, Any]:
         return {
             "service": settings.app_name,
             "version": settings.app_version,

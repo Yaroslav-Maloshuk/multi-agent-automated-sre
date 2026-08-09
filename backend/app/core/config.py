@@ -7,7 +7,6 @@ from __future__ import annotations
 from enum import StrEnum
 from functools import lru_cache
 
-from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,7 +23,7 @@ class LLMProviderName(StrEnum):
     LOCAL = "local"
 
 
-class Settings(BaseSettings):
+class Settings(BaseSettings):  # type: ignore[misc]  # pydantic-settings ships no stubs
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
