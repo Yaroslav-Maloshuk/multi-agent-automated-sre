@@ -1,0 +1,29 @@
+# Automated dependency updates, grouped by ecosystem and kept small on purpose:
+# separate PRs per update make regressions easy to bisect.
+
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+    groups:
+      python-runtime:
+        patterns: ["*"]
+        exclude-patterns:
+          - "pytest*"
+          - "ruff"
+          - "mypy"
+
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+    groups:
+      npm-runtime:
+        patterns: ["*"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
