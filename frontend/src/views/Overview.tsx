@@ -143,7 +143,7 @@ export default function Overview() {
                     <YAxis stroke="#4b5563" fontSize={11} tickLine={false} width={60} />
                     <Tooltip
                       contentStyle={{ background: "#0b1020", border: "1px solid #1f2937", borderRadius: 8, fontSize: 12 }}
-                      formatter={(value: number | string) => fmtMoney(Number(value))}
+                      formatter={(value) => fmtMoney(Number(value))}
                     />
                     <Area type="monotone" dataKey="saved" stroke="#22d3ee" fill="url(#savedFill)" strokeWidth={2} />
                   </AreaChart>

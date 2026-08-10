@@ -60,7 +60,7 @@ export default function Metrics() {
                 <YAxis stroke="#4b5563" fontSize={11} tickLine={false} width={60} />
                 <Tooltip
                   contentStyle={{ background: "#0b1020", border: "1px solid #1f2937", borderRadius: 8, fontSize: 12 }}
-                  formatter={(value: number | string) => fmtMoney(Number(value))}
+                  formatter={(value) => fmtMoney(Number(value))}
                 />
                 <Area type="monotone" dataKey="saved" name="saved" stroke="#34d399" fill="url(#saved)" strokeWidth={2} />
                 <Area type="monotone" dataKey="cost" name="cost" stroke="#f87171" fill="url(#cost)" strokeWidth={2} />
