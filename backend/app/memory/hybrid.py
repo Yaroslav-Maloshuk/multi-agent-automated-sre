@@ -228,10 +228,11 @@ class PostgresHybridMemory(MemoryStore):
     async def index_document(self, doc: MemoryDocument, embedding: list[float] | None = None) -> None:
         assert self._pool is not None
         embedding = embedding or [0.0] * 1536
+        vector_literal = "[" + ",".join(repr(float(v)) for v in embedding) + "]"
         await self._pool.execute(
             f"""
             INSERT INTO {self.TABLE} (doc_id, text, embedding, metadata)
-            VALUES ($1, $2, $3, $4)
+            VALUES ($1, $2, $3::vector, $4::jsonb)
             ON CONFLICT (doc_id) DO UPDATE
               SET text = EXCLUDED.text,
                   embedding = EXCLUDED.embedding,
@@ -239,8 +240,8 @@ class PostgresHybridMemory(MemoryStore):
             """,
             doc.doc_id,
             doc.text,
-            embedding,
-            doc.metadata,
+            vector_literal,
+            json_dumps(doc.metadata),
         )
 
     async def hybrid_search(

@@ -19,6 +19,7 @@ def settings() -> Settings:
     return Settings(
         _env_file=None,
         app_env=AppEnvironment.TEST,
+        celery_enabled=False,
         graph_hitl_auto_approve=True,
         graph_max_verifier_attempts=3,
     )
