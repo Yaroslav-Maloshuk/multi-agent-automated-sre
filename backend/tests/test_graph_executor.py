@@ -43,7 +43,7 @@ async def test_hitl_blocks_then_approve_resumes(bus, memory, pool, settings, eve
     assert pending.incident_id == "inc_test"
     assert not task.done()
 
-    executor.submit_review(
+    await executor.submit_review(
         HITLReview(incident_id="inc_test", run_id="", patch_ref=pending.payload["patch_ref"], action=ReviewAction.APPROVE, reason="looks good")
     )
     state = await asyncio.wait_for(task, timeout=20)
@@ -59,7 +59,7 @@ async def test_hitl_reject_cancels_run(bus, memory, pool, settings, events) -> N
     task = asyncio.create_task(executor.run(INCIDENT))
     await wait_for_event(events, EventType.PENDING_APPROVAL)
 
-    executor.submit_review(
+    await executor.submit_review(
         HITLReview(incident_id="inc_test", run_id="", patch_ref="patch_x", action=ReviewAction.REJECT, reason="nope")
     )
     state = await asyncio.wait_for(task, timeout=20)
@@ -75,7 +75,7 @@ async def test_hitl_modify_updates_patch(bus, memory, pool, settings, events) ->
     task = asyncio.create_task(executor.run(INCIDENT))
     pending = await wait_for_event(events, EventType.PENDING_APPROVAL)
 
-    executor.submit_review(
+    await executor.submit_review(
         HITLReview(
             incident_id="inc_test",
             run_id="",

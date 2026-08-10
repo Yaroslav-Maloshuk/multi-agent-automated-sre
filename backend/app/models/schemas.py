@@ -28,5 +28,11 @@ class ReviewRequest(BaseModel):
     modified_files: dict[str, str] = Field(default_factory=dict)
 
 
+class ForkRequest(BaseModel):
+    snapshot_ref: str | None = None
+    title: str | None = Field(default=None, max_length=300)
+    auto_run: bool = True
+
+
 class SandboxWarmRequest(BaseModel):
     count: int | None = Field(default=None, ge=1, le=10)

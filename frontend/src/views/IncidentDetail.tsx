@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { useStore } from "../store";
-import type { IncidentState } from "../lib/types";
+import * as api from "../lib/api";
+import type { IncidentState, SnapshotBlob } from "../lib/types";
 import { fmtClock, fmtDuration, fmtMoney, fmtTokens } from "../lib/format";
 import Badge, { statusStyle } from "../components/Badge";
-import Console from "../components/Console";
+import DiffView from "../components/DiffView";
+import TerminalView from "../components/TerminalView";
 
 interface SectionProps {
   title: string;
@@ -30,23 +32,28 @@ function CodeBlock({ text }: { text: string }) {
 }
 
 function FilePair({ path, oldContent, newContent }: { path: string; oldContent: string; newContent: string }) {
+  const language = (() => {
+    if (path.endsWith(".py")) return "python";
+    if (path.endsWith(".ts") || path.endsWith(".tsx")) return "typescript";
+    if (path.endsWith(".js") || path.endsWith(".jsx")) return "javascript";
+    if (path.endsWith(".json")) return "json";
+    if (path.endsWith(".yml") || path.endsWith(".yaml")) return "yaml";
+    if (path.endsWith(".go")) return "go";
+    if (path.endsWith(".sh")) return "shell";
+    if (path.endsWith(".sql")) return "sql";
+    if (path.endsWith(".md")) return "markdown";
+    return "plaintext";
+  })();
   return (
     <div>
       <p className="mb-1 font-mono text-xs font-medium text-cyan-300">{path}</p>
-      <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-        <div>
-          <p className="mb-0.5 text-[10px] uppercase tracking-wider text-red-400/70">before</p>
-          <pre className="max-h-56 overflow-auto rounded-md border border-red-900/40 bg-black/40 p-2 font-mono text-[11px] leading-relaxed text-slate-400">
-            {oldContent || "(new file)"}
-          </pre>
-        </div>
-        <div>
-          <p className="mb-0.5 text-[10px] uppercase tracking-wider text-emerald-400/70">after</p>
-          <pre className="max-h-56 overflow-auto rounded-md border border-emerald-900/40 bg-black/40 p-2 font-mono text-[11px] leading-relaxed text-emerald-200">
-            {newContent}
-          </pre>
-        </div>
-      </div>
+      <DiffView
+        original={oldContent}
+        modified={newContent}
+        language={language}
+        originalLabel="before"
+        modifiedLabel="after"
+      />
     </div>
   );
 }
@@ -71,7 +78,39 @@ export default function IncidentDetail() {
   const resumeIncident = useStore((s) => s.resumeIncident);
   const reviewIncident = useStore((s) => s.reviewIncident);
   const consoleLines = useStore((s) => s.console);
+  const fetchIncidents = useStore((s) => s.fetchIncidents);
+  const selectIncident = useStore((s) => s.selectIncident);
   const [reason, setReason] = useState("");
+  const [replay, setReplay] = useState<SnapshotBlob | null>(null);
+  const [forking, setForking] = useState(false);
+  const [forkError, setForkError] = useState<string | null>(null);
+
+  const loadSnapshot = async (ref: string) => {
+    if (!selectedId) return;
+    setForkError(null);
+    try {
+      const res = await api.getSnapshot(selectedId, ref);
+      setReplay({ ...res.snapshot, ref: res.ref });
+    } catch (err) {
+      setForkError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const forkFromReplay = async () => {
+    if (!selectedId || !replay) return;
+    setForking(true);
+    setForkError(null);
+    try {
+      const res = await api.forkIncident(selectedId, { snapshot_ref: replay.ref, auto_run: true });
+      await fetchIncidents();
+      setReplay(null);
+      selectIncident(res.incident_id);
+    } catch (err) {
+      setForkError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setForking(false);
+    }
+  };
 
   if (!selectedId) {
     return (
@@ -162,27 +201,73 @@ export default function IncidentDetail() {
               <p className="text-sm text-slate-600">No steps recorded yet.</p>
             ) : (
               <ol className="space-y-3">
-                {state.timeline.map((step) => (
-                  <li key={step.step_index} className="flex gap-3">
-                    <div className="flex flex-col items-center">
-                      <span className="mt-1 h-2.5 w-2.5 rounded-full border border-cyan-400/60 bg-cyan-400/20" />
-                      <span className="w-px flex-1 bg-slate-800" />
-                    </div>
-                    <div className="min-w-0 flex-1 pb-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-medium text-slate-200">{step.node}</span>
-                        <span className="font-mono text-[10px] text-slate-600">#{step.step_index}</span>
-                        <span className="ml-auto text-[11px] text-slate-500">
-                          {fmtClock(step.finished_at)} · {fmtDuration(step.duration_seconds)}
-                        </span>
+                {state.timeline.map((step) => {
+                  const active = replay !== null && replay.step_index === step.step_index;
+                  return (
+                    <li key={step.step_index} className="flex gap-3">
+                      <div className="flex flex-col items-center">
+                        <span
+                          className={`mt-1 h-2.5 w-2.5 rounded-full border ${
+                            active ? "border-amber-400 bg-amber-400" : "border-cyan-400/60 bg-cyan-400/20"
+                          }`}
+                        />
+                        <span className="w-px flex-1 bg-slate-800" />
                       </div>
-                      <p className="mt-0.5 text-xs text-slate-400">{step.summary}</p>
-                    </div>
-                  </li>
-                ))}
+                      <div className="min-w-0 flex-1 pb-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            disabled={!step.snapshot_ref}
+                            onClick={() => step.snapshot_ref && void loadSnapshot(step.snapshot_ref)}
+                            title={step.snapshot_ref ? "Replay this step / fork from here" : "No snapshot for this step"}
+                            className={`text-sm font-medium ${
+                              step.snapshot_ref
+                                ? "cursor-pointer text-slate-200 underline-offset-2 hover:text-amber-300 hover:underline"
+                                : "text-slate-200"
+                            }`}
+                          >
+                            {step.node}
+                          </button>
+                          <span className="font-mono text-[10px] text-slate-600">#{step.step_index}</span>
+                          <span className="ml-auto text-[11px] text-slate-500">
+                            {fmtClock(step.finished_at)} · {fmtDuration(step.duration_seconds)}
+                          </span>
+                        </div>
+                        <p className="mt-0.5 text-xs text-slate-400">{step.summary}</p>
+                      </div>
+                    </li>
+                  );
+                })}
               </ol>
             )}
           </Section>
+
+          {replay && (
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-semibold uppercase tracking-wider text-amber-300">
+                  Replaying snapshot #{replay.step_index} · {replay.node}
+                </p>
+                <p className="mt-0.5 text-xs text-slate-400">{replay.summary}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void forkFromReplay()}
+                disabled={forking}
+                className="rounded-md bg-amber-500 px-3 py-1.5 text-xs font-semibold text-slate-900 hover:bg-amber-400 disabled:opacity-50"
+              >
+                {forking ? "Forking…" : "Fork run from here"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setReplay(null)}
+                className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-800"
+              >
+                Jump to latest
+              </button>
+              {forkError && <span className="text-xs text-red-400">{forkError}</span>}
+            </div>
+          )}
 
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
             <Section title={`Subtasks (${state.subtasks.length})`}>
@@ -365,9 +450,9 @@ export default function IncidentDetail() {
             </Section>
 
             <Section title="Run console">
-              <Console
-                lines={incidentConsole}
-                heightClass="h-64"
+              <TerminalView
+                lines={incidentConsole.map((line) => line.message)}
+                height="h-64"
                 empty="Waiting for run events on this incident…"
               />
             </Section>

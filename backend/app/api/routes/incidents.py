@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends
 
 from app.api.deps import get_incident_service
 from app.bus.schemas import HITLReview
-from app.models.schemas import IncidentCreate, ReviewRequest
+from app.models.schemas import ForkRequest, IncidentCreate, ReviewRequest
 from app.services.incident_service import IncidentService
 
 router = APIRouter()
@@ -23,7 +23,7 @@ async def create_incident(
 
 @router.get("/incidents")
 async def list_incidents(service: IncidentService = Depends(get_incident_service)) -> dict[str, Any]:
-    return {"incidents": service.list()}
+    return {"incidents": service.list_incidents()}
 
 
 @router.get("/incidents/{incident_id}")
@@ -49,7 +49,7 @@ async def review_incident(
         reason=payload.reason,
         modified_files=payload.modified_files,
     )
-    service.review(review)
+    await service.review(review)
     return {"incident_id": incident_id, "accepted": True, "action": payload.action.value}
 
 
@@ -61,3 +61,30 @@ async def interrupt_incident(incident_id: str, service: IncidentService = Depend
 @router.post("/incidents/{incident_id}/resume", status_code=202)
 async def resume_incident(incident_id: str, service: IncidentService = Depends(get_incident_service)) -> dict[str, Any]:
     return await service.resume(incident_id)
+
+
+@router.get("/incidents/{incident_id}/snapshots")
+async def list_snapshots(incident_id: str, service: IncidentService = Depends(get_incident_service)) -> dict[str, Any]:
+    return {"incident_id": incident_id, "snapshots": await service.list_snapshots(incident_id)}
+
+
+@router.get("/incidents/{incident_id}/snapshots/{ref}")
+async def get_snapshot(
+    incident_id: str, ref: str, service: IncidentService = Depends(get_incident_service)
+) -> dict[str, Any]:
+    return {"incident_id": incident_id, "ref": ref, "snapshot": await service.get_snapshot(incident_id, ref)}
+
+
+@router.post("/incidents/{incident_id}/fork", status_code=201)
+async def fork_incident(
+    incident_id: str,
+    payload: ForkRequest,
+    service: IncidentService = Depends(get_incident_service),
+) -> dict[str, Any]:
+    result = await service.fork(
+        incident_id,
+        snapshot_ref=payload.snapshot_ref,
+        title=payload.title,
+        auto_run=payload.auto_run,
+    )
+    return {"incident_id": result["incident_id"], "incident": result["incident"]}

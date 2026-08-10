@@ -5,14 +5,14 @@ publishing helpers so agents never touch infrastructure directly.
 """
 from __future__ import annotations
 
-import asyncio
 import logging
 from dataclasses import dataclass
 from typing import Any
 
 from app.bus.redis_bus import EventBus
-from app.bus.schemas import Channel, EventEnvelope, EventType, HITLReview
+from app.bus.schemas import Channel, EventEnvelope, EventType
 from app.core.config import Settings
+from app.graph.approvals import ApprovalRegistry
 from app.graph.state import AgentState
 from app.llm.base import LLMClient
 from app.memory.hybrid import MemoryStore
@@ -30,7 +30,7 @@ class AgentContext:
     sandbox_pool: SandboxPool
     memory: MemoryStore
     settings: Settings
-    approval_registry: dict[str, asyncio.Future[HITLReview]]
+    approval_registry: ApprovalRegistry
     state: AgentState
 
     # ── Event emission ──────────────────────────────────────────────────

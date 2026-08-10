@@ -127,7 +127,14 @@ from exactly where it stopped (an `asyncio.Future` held by the executor).
 | GET    | `/api/v1/agents`                  | agent catalog                    |
 | GET    | `/api/v1/sandboxes`               | pool stats                       |
 | POST   | `/api/v1/sandboxes/warm`          | force warm-up                    |
-| GET    | `/api/v1/metrics/roi`             | ROI + token history              |
+| GET    | `/api/v1/metrics/roi`             | ROI + token history (Postgres)   |
+| GET    | `/api/v1/incidents/{id}/snapshots`| trajectory step refs (replay)    |
+| GET    | `/api/v1/incidents/{id}/snapshots/{ref}` | full state at a step      |
+| POST   | `/api/v1/incidents/{id}/fork`     | spawn child incident from a step |
+| POST   | `/api/v1/collectors/datadog`      | Datadog event webhook            |
+| POST   | `/api/v1/collectors/prometheus`   | Alertmanager webhook             |
+| POST   | `/api/v1/collectors/kubernetes`   | Kubernetes Event webhook         |
+| GET    | `/api/v1/collectors`              | enabled poller status            |
 
 ## 7. gRPC mapping
 

@@ -30,9 +30,10 @@ center over WebSockets in real time.
         └───────────────┴────────────────────────────────────────────
 ```
 
-Alerts are ingested over the REST API (`POST /api/v1/incidents`) — today there is no
-native Datadog / Prometheus / K8s / CI collector; any system that can POST a JSON
-alert is a source.
+Alerts are ingested natively from Datadog, Prometheus/Alertmanager and
+Kubernetes — both push (`POST /api/v1/collectors/{source}` webhooks) and pull
+(periodic pollers for Datadog monitors, Prometheus `ALERTS` and K8s Warning
+events). `POST /api/v1/incidents` remains the generic programmatic entry point.
 
 ## Architecture (top-level)
 
@@ -40,15 +41,16 @@ alert is a source.
 |---|---|
 | API Gateway | Python 3.11+ / FastAPI (async), typed WebSocket protocol |
 | Agent Orchestration | Asyncio state graph (DAG executor with interrupts) |
-| Background Execution | Celery configured (broker: Redis) + worker container; runs currently execute in-process via asyncio (no task dispatched yet) |
+| Background Execution | Celery (broker + result backend: Redis). Runs dispatch to the worker pool when `CELERY_ENABLED=true`; local dev runs in-process |
 | Real-time Fabric | Redis Pub/Sub → WebSocket fan-out (no SSE) |
 | Isolation | Docker SDK — pre-warmed, network-restricted sandbox pool (`--network none`) |
 | Long-term Memory | PostgreSQL + pgvector (semantic) + BM25/tsvector (lexical), RRF fusion |
 | LLMs | OpenAI / Anthropic / local HuggingFace (provider-agnostic, lazy-imported) |
-| Persistence | PostgreSQL via Prisma ORM |
-| Frontend | React 18 + TypeScript + Tailwind + Recharts |
-| Observability | Structured JSON logging (Langfuse config only — not yet wired; no CI/CD yet) |
-| Testing | Pytest 23 tests, ruff, mypy (strict), tsc |
+| Persistence | PostgreSQL via Prisma ORM (+ raw asyncpg for ROI ledger) |
+| Frontend | React 18 + TypeScript + Tailwind + Recharts + Monaco diff + Xterm |
+| Observability | Structured JSON logging + Langfuse traces (optional, env-gated) |
+| CI/CD | GitHub Actions (CI quality gate + Docker build/push to GHCR), Dependabot |
+| Testing | Pytest 30 tests, ruff, mypy (strict), tsc |
 
 ## Quickstart (one command)
 
@@ -92,7 +94,14 @@ The pytest suite needs no Docker/Redis/LLM: `make test`.
 - `GET  /api/v1/agents` — agent catalog
 - `GET  /api/v1/sandboxes` — pool stats
 - `POST /api/v1/sandboxes/warm` — force pool warm-up
-- `GET  /api/v1/metrics/roi` — cost-savings + token ledger
+- `GET  /api/v1/metrics/roi` — cost-savings + token ledger (persisted in Postgres)
+- `GET  /api/v1/incidents/{id}/snapshots` — trajectory step refs (time-travel)
+- `GET  /api/v1/incidents/{id}/snapshots/{ref}` — a full step snapshot
+- `POST /api/v1/incidents/{id}/fork` — spawn a child incident from a snapshot
+- `POST /api/v1/collectors/datadog` — Datadog event webhook
+- `POST /api/v1/collectors/prometheus` — Alertmanager webhook
+- `POST /api/v1/collectors/kubernetes` — Kubernetes Event webhook
+- `GET  /api/v1/collectors` — enabled poller status
 - `WS   /ws/stream?channels=...` — bidirectional event channel
 
 Full contract in [docs/PROTOCOL.md](docs/PROTOCOL.md).
@@ -101,16 +110,18 @@ Full contract in [docs/PROTOCOL.md](docs/PROTOCOL.md).
 
 1. **Stateful agent DAG** — Planner → Log Analyzer → Code Fixer → HITL gate →
    Verifier (self-correct loop) → Deploy, each node a typed async actor.
-2. **Snapshot engine** — every graph step persists a memory snapshot
-   (`memory.snapshot`); the API exposes `get_snapshot` and the UI renders live
-   state. Replay / fork of a trajectory is not yet implemented in the UI.
+2. **Snapshot engine** — every graph step persists a full state snapshot
+   (`memory.snapshot`); the API exposes `get_snapshot` and the UI lets you click
+   any timeline step to **replay** it and **fork** a child incident from that
+   exact trajectory point.
 3. **Diff streaming** — the fixer streams live "typing" telemetry and a unified
-   Git-style diff; the UI renders before/after file pairs and the unified diff
-   (Monaco / Xterm are declared deps but not yet wired into the UI).
+   Git-style diff; the UI renders before/after file pairs in a **Monaco diff
+   editor** and the run console streams into an **Xterm** terminal.
 4. **Warm sandbox pool** — 3–5 pre-warmed, network-restricted containers; code
    volumes mount in milliseconds.
 5. **Reactive sync** — every event flows Redis Pub/Sub → WebSocket, zero polling.
-6. **ROI ledger** — latency + token spend converted into concrete $ savings.
+6. **ROI ledger** — latency + token spend converted into concrete $ savings,
+   persisted to Postgres so history survives restarts.
 
 ## Testing
 
@@ -120,28 +131,28 @@ make lint          # ruff + eslint
 make typecheck     # mypy + tsc
 ```
 
-All three pass on `main` (verified 2026-08-09).
+All three pass on `main` (verified 2026-08-10).
 
-## Measured metrics (2026-08-09)
+## Measured metrics (2026-08-10)
 
 ### Engineering metrics
 
 | Metric | Value |
 |---|---|
-| Backend LOC (app) | 4,185 Python |
-| Backend LOC (tests) | 544 Python |
-| Frontend LOC | 1,904 TS/TSX |
-| Tests | 23 passed (~5 s, no infra required) |
+| Backend LOC (app) | 5,518 Python |
+| Backend LOC (tests) | 651 Python |
+| Frontend LOC | 2,183 TS/TSX |
+| Tests | 30 passed (~6 s, no infra required) |
 | Test coverage | 74 % statement (`pytest --cov`) |
 | Lint | 0 issues (ruff + eslint) |
-| Typecheck | 0 issues (mypy strict, 54 files + tsc) |
-| REST endpoints | 12 (`/api/v1/*`) |
+| Typecheck | 0 issues (mypy strict + tsc) |
+| REST endpoints | 19 (`/api/v1/*`) |
 | WebSocket endpoint | 1 (`/ws/stream`) |
 | Event types | 25 |
 | Graph nodes | 7 (Ingest → Planner → Log Analyzer / Code Fixer → HITL → Verifier → Deploy) |
 | Agent implementations | 5 (+ registry catalog) |
-| Backend deps | 15 runtime + 7 dev |
-| Frontend deps | 8 runtime + 12 dev |
+| Backend deps | 17 runtime + 7 dev |
+| Frontend deps | 11 runtime + 12 dev |
 | Sandbox pool | 3–5 warm, `--network none`, 512 MB / 1.5 CPU quota |
 | Local model cache | Qwen2.5-3B-Instruct — 10 GB on host, auto-mount into backend |
 
@@ -173,10 +184,10 @@ token spend, and the net `saved_amount = saved_hours × $150/h − token_cost`.
 At current local-model pricing token cost is negligible (cents), so the ceiling
 per incident is ≈ $87.5 of labor saved minus tokens.
 
-> **Honest caveats:** the ROI ledger is **in-memory** (reset on process restart),
-> and entries are only recorded for runs that reach a terminal status
-> (COMPLETED / FAILED / CANCELLED). The "savings" figure assumes a fully
-> autonomous, approved run.
+> **Honest caveats:** ROI entries are only recorded for runs that reach a
+> terminal status (COMPLETED / FAILED / CANCELLED), and the "savings" figure
+> assumes a fully autonomous, approved run. The ledger itself is now durable
+> (Postgres `roi_ledger` table) — history survives restarts.
 
 ## Security boundaries
 

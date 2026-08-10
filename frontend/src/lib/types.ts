@@ -117,6 +117,31 @@ export interface IncidentDetail {
   roi: RoiEntry | null;
 }
 
+export interface SnapshotMeta {
+  ref: string;
+  run_id: string | null;
+  step_index: number | null;
+  node: string | null;
+  summary: string | null;
+  status: string | null;
+}
+
+export interface SnapshotBlob {
+  ref: string;
+  run_id: string | null;
+  step_index: number | null;
+  node: string | null;
+  summary: string | null;
+  status: string | null;
+  state: IncidentState;
+}
+
+export interface ForkInput {
+  snapshot_ref?: string | null;
+  title?: string;
+  auto_run?: boolean;
+}
+
 export interface AgentInfo {
   name: string;
   label: string;

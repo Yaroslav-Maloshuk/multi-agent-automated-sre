@@ -43,6 +43,10 @@ class Settings(BaseSettings):  # type: ignore[misc]  # pydantic-settings ships n
     database_url: str = "postgresql://sre:sre@localhost:5432/sre"
     celery_broker_url: str = "redis://localhost:6379/1"
     celery_result_backend: str = "redis://localhost:6379/2"
+    # When true, incident runs are dispatched to the Celery worker pool instead
+    # of executing in-process inside the API. The compose stack enables it for
+    # the backend service; local `make backend` keeps in-process execution.
+    celery_enabled: bool = False
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
 
     # ── Event fabric ───────────────────────────────────────────────────
@@ -82,6 +86,21 @@ class Settings(BaseSettings):  # type: ignore[misc]  # pydantic-settings ships n
     langfuse_public_key: str | None = None
     langfuse_secret_key: str | None = None
     langfuse_host: str = "https://cloud.langfuse.com"
+
+    # ── Alert collectors (native ingestion) ────────────────────────────
+    # Comma-separated list of enabled pollers: e.g. "prometheus,datadog".
+    collectors_enabled: str = ""
+    collector_poll_interval: int = 30
+    # Prometheus: base URL of the server exposing /api/v1/query (ALERTS metric).
+    prometheus_url: str | None = None
+    prometheus_query: str = "ALERTS"
+    # Datadog: monitor API credentials + site.
+    datadog_api_key: str | None = None
+    datadog_app_key: str | None = None
+    datadog_site: str = "datadoghq.com"
+    datadog_monitor_tags: str = ""
+    # Kubernetes: optional kubeconfig path; empty == in-cluster.
+    kubernetes_kubeconfig: str | None = None
 
     # Human-in-the-loop: benchmark of average human MITTR, used for ROI.
     human_mttr_seconds: int = 35 * 60  # 35 minutes

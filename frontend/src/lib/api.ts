@@ -1,12 +1,15 @@
 import type {
   AgentInfo,
   EventEnvelope,
+  ForkInput,
   Health,
   IncidentCreateInput,
   IncidentDetail,
   IncidentSummary,
   RoiData,
   SandboxStats,
+  SnapshotBlob,
+  SnapshotMeta,
 } from "./types";
 
 const API_BASE = "/api/v1";
@@ -84,6 +87,24 @@ export function interruptIncident(incidentId: string): Promise<{ incident_id: st
 
 export function resumeIncident(incidentId: string): Promise<{ incident_id: string; status: string }> {
   return request(`/incidents/${encodeURIComponent(incidentId)}/resume`, { method: "POST" });
+}
+
+export function listSnapshots(incidentId: string): Promise<{ incident_id: string; snapshots: SnapshotMeta[] }> {
+  return request(`/incidents/${encodeURIComponent(incidentId)}/snapshots`);
+}
+
+export function getSnapshot(incidentId: string, ref: string): Promise<{ incident_id: string; ref: string; snapshot: SnapshotBlob }> {
+  return request(`/incidents/${encodeURIComponent(incidentId)}/snapshots/${encodeURIComponent(ref)}`);
+}
+
+export function forkIncident(
+  incidentId: string,
+  body: ForkInput,
+): Promise<{ incident_id: string; incident: Record<string, unknown> }> {
+  return request(`/incidents/${encodeURIComponent(incidentId)}/fork`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 }
 
 export function listAgents(): Promise<{ agents: AgentInfo[] }> {

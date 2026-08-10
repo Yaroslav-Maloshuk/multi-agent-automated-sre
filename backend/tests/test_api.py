@@ -64,6 +64,28 @@ def test_404_for_unknown_incident(client: TestClient) -> None:
     assert resp.status_code == 404
 
 
+def test_snapshots_and_fork(client: TestClient) -> None:
+    created = client.post("/api/v1/incidents", json=INCIDENT)
+    incident_id = created.json()["incident_id"]
+    client.post(f"/api/v1/incidents/{incident_id}/run")
+    _poll_terminal(client, incident_id)
+
+    snaps = client.get(f"/api/v1/incidents/{incident_id}/snapshots").json()["snapshots"]
+    assert len(snaps) >= 1
+    ref = snaps[0]["ref"]
+
+    blob = client.get(f"/api/v1/incidents/{incident_id}/snapshots/{ref}").json()["snapshot"]
+    assert "state" in blob
+    assert blob["state"]["incident_id"] == incident_id
+
+    forked = client.post(f"/api/v1/incidents/{incident_id}/fork", json={"snapshot_ref": ref, "auto_run": True})
+    assert forked.status_code == 201
+    child_id = forked.json()["incident_id"]
+    assert child_id != incident_id
+    state = _poll_terminal(client, child_id)
+    assert state["status"] == "COMPLETED"
+
+
 def _poll_terminal(client: TestClient, incident_id: str, timeout: float = 20.0) -> dict:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:

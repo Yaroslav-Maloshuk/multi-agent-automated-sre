@@ -44,24 +44,55 @@ def run_incident_task(self, incident_id: str, incident: dict[str, Any]) -> dict[
 
 async def _resolve(incident_id: str, incident: dict[str, Any]) -> dict[str, Any]:
     from app.bus.redis_bus import RedisEventBus
+    from app.bus.schemas import Channel, EventType
+    from app.graph.approvals import RedisApprovalRegistry
     from app.graph.executor import GraphExecutor
     from app.llm.providers.factory import build_llm
     from app.memory.hybrid import PostgresHybridMemory
     from app.sandbox.pool import build_sandbox_pool
+    from app.services.roi import PostgresROILedger
 
     cfg = get_settings()
     bus = RedisEventBus(cfg)
     await bus.start()
     memory = PostgresHybridMemory(cfg)
     await memory.start()
+    roi = PostgresROILedger(cfg)
+    await roi.start()
     pool = build_sandbox_pool(cfg)
     await pool.start()
+    approvals = RedisApprovalRegistry(cfg)
+    await approvals.start()
+    llm = None
     try:
         llm = build_llm(cfg)
-        executor = GraphExecutor(bus=bus, llm=llm, sandbox_pool=pool, memory=memory, settings=cfg)
+        executor = GraphExecutor(
+            bus=bus, llm=llm, sandbox_pool=pool, memory=memory, settings=cfg, approval_registry=approvals
+        )
         state = await executor.run(incident, incident_id=incident_id)
-        return state.to_dict()
+        state_dict = state.to_dict()
+
+        # Publish the terminal snapshot + ROI so the API/UI converge even though
+        # the run happened in a different process.
+        await bus.publish(
+            _env(EventType.MEMORY_SNAPSHOT, Channel.incident(incident_id), incident_id, state.run_id, {"state": state_dict})
+        )
+        await roi.record(state)
+        await bus.publish(_env(EventType.ROI_UPDATED, Channel.TELEMETRY, incident_id, state.run_id, {"incident_id": incident_id}))
+        return state_dict
     finally:
+        from app.llm.tracing import TracedLLM
+
+        if isinstance(llm, TracedLLM):
+            llm.flush()
+        await approvals.close()
         await pool.stop()
+        await roi.close()
         await memory.close()
         await bus.stop()
+
+
+def _env(type_: Any, channel: str, incident_id: str, run_id: str, payload: dict[str, Any]) -> Any:
+    from app.bus.schemas import EventEnvelope
+
+    return EventEnvelope(type=type_, channel=channel, incident_id=incident_id, run_id=run_id, payload=payload)

@@ -78,32 +78,30 @@ async def hitl_gate_node(ctx: AgentContext, state: AgentState) -> tuple[AgentSta
     state = state.replace(status=GraphStatus.PENDING_APPROVAL)
     await ctx.emit(EventType.MEMORY_SNAPSHOT, state=state.to_dict())
 
-    fut = ctx.approval_registry.get(state.incident_id)
-    if fut is None:
-        fut = asyncio.get_running_loop().create_future()
-        ctx.approval_registry[state.incident_id] = fut
-
-    timeout = ctx.settings.graph_hitl_timeout_seconds
+    await ctx.approval_registry.prepare(state.incident_id)
+    timeout_s = float(ctx.settings.graph_hitl_timeout_seconds)
     try:
-        if timeout > 0:
-            done, _ = await asyncio.wait({fut}, timeout=timeout)
-            if not done:
-                await ctx.emit(
-                    EventType.REVIEW_DECIDED,
-                    action=ReviewAction.REJECT.value,
-                    patch_ref=patch.patch_ref,
-                    reason="approval timeout",
-                )
-                timed_out = dc_replace(patch, status=PatchStatus.REJECTED, review_reason="approval timeout")
-                return state.replace(patch=timed_out).finish(GraphStatus.CANCELLED), "Human gate: timed out"
-            review = done.pop().result()
-        else:
-            review = await asyncio.shield(fut)
+        gate_review = await ctx.approval_registry.wait_for_review(state.incident_id, timeout_s)
     except asyncio.CancelledError:
+        await ctx.emit(
+            EventType.REVIEW_DECIDED,
+            action=ReviewAction.REJECT.value,
+            patch_ref=patch.patch_ref,
+            reason="run interrupted by operator",
+        )
         raise
+    if gate_review is None:
+        await ctx.emit(
+            EventType.REVIEW_DECIDED,
+            action=ReviewAction.REJECT.value,
+            patch_ref=patch.patch_ref,
+            reason="approval timeout",
+        )
+        timed_out = dc_replace(patch, status=PatchStatus.REJECTED, review_reason="approval timeout")
+        return state.replace(patch=timed_out).finish(GraphStatus.CANCELLED), "Human gate: timed out"
 
-    state = await _apply_review(ctx, state, review)
-    return state, f"Human gate: {review.action.value}"
+    state = await _apply_review(ctx, state, gate_review)
+    return state, f"Human gate: {gate_review.action.value}"
 
 
 async def verifier_node(ctx: AgentContext, state: AgentState) -> tuple[AgentState, str]:

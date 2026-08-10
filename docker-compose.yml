@@ -55,6 +55,7 @@ services:
       DATABASE_URL: postgresql://sre:sre@postgres:5432/sre
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
+      CELERY_ENABLED: "true"
       CORS_ORIGINS: http://localhost:5173,http://localhost:3000
       DOCKER_SANDBOX_IMAGE: auto-sre/sandbox:dev
       AUTO_SRE_SANDBOX_IMAGE_BUILD_PATH: /opt/sandbox

@@ -18,16 +18,19 @@ from app.api.router import api_router
 from app.api.ws.events import router as ws_router
 from app.api.ws.manager import ConnectionManager
 from app.bus.redis_bus import build_event_bus
+from app.collectors.runner import CollectorRunner
 from app.core.config import Settings, get_settings
 from app.core.errors import SandboxError, register_exception_handlers
 from app.core.logging import configure_logging
+from app.graph.approvals import build_approval_registry
 from app.graph.executor import GraphExecutor
 from app.llm.base import LLMClient
 from app.llm.providers.factory import build_llm
+from app.llm.tracing import TracedLLM
 from app.memory.hybrid import build_memory
 from app.sandbox.pool import build_sandbox_pool
 from app.services.incident_service import IncidentService
-from app.services.roi import ROILedger
+from app.services.roi import build_roi
 
 logger = logging.getLogger(__name__)
 
@@ -51,33 +54,49 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except SandboxError as exc:
         logger.warning("sandbox pool unavailable at startup: %s", exc)
 
-    executor = GraphExecutor(bus=bus, llm=llm, sandbox_pool=pool, memory=memory, settings=settings)
-    roi = ROILedger(settings)
-    service = IncidentService(executor, bus, roi, settings)
+    approvals = build_approval_registry(settings)
+    executor = GraphExecutor(
+        bus=bus, llm=llm, sandbox_pool=pool, memory=memory, settings=settings, approval_registry=approvals
+    )
+    roi = build_roi(settings)
+    await roi.start()
+    service = IncidentService(executor, bus, roi, settings, approvals, memory)
+    await service.start()
     manager = ConnectionManager(bus, settings)
     await manager.start()
+
+    runner = CollectorRunner(settings, service.create)
+    await runner.start()
 
     app.state.bus = bus
     app.state.memory = memory
     app.state.sandbox_pool = pool
     app.state.llm = llm
     app.state.executor = executor
+    app.state.approvals = approvals
     app.state.roi = roi
     app.state.incident_service = service
     app.state.ws_manager = manager
+    app.state.collector_runner = runner
 
     logger.info(
-        "gateway ready: env=%s provider=%s sandbox=%s",
+        "gateway ready: env=%s provider=%s sandbox=%s executor=%s",
         settings.app_env.value,
         settings.llm_provider.value,
         pool.__class__.__name__,
+        "celery" if settings.celery_enabled else "in-process",
     )
     try:
         yield
     finally:
+        await runner.stop()
+        await service.stop()
         await manager.stop()
         await pool.stop()
         await memory.close()
+        await roi.close()
+        if isinstance(llm, TracedLLM):
+            llm.flush()
         await bus.stop()
 
 

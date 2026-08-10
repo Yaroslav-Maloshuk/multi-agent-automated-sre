@@ -21,6 +21,7 @@ from app.bus.redis_bus import EventBus
 from app.bus.schemas import EventType, HITLReview
 from app.core.config import Settings
 from app.core.errors import ConflictError, GraphError, GraphNotReadyError
+from app.graph.approvals import ApprovalRegistry, InMemoryApprovalRegistry
 from app.graph.context import AgentContext
 from app.graph.graph import GRAPH_SPEC, NODE_ORDER, NodeHandler
 from app.graph.state import AgentName, AgentState, GraphStatus, create_initial_state
@@ -44,6 +45,7 @@ class GraphExecutor:
         sandbox_pool: SandboxPool,
         memory: MemoryStore,
         settings: Settings,
+        approval_registry: ApprovalRegistry | None = None,
     ) -> None:
         self._bus = bus
         self._llm = llm
@@ -51,7 +53,7 @@ class GraphExecutor:
         self._memory = memory
         self._settings = settings
         self._handlers: dict[str, NodeHandler] = self._load_handlers()
-        self._approvals: dict[str, asyncio.Future[HITLReview]] = {}
+        self._approvals = approval_registry or InMemoryApprovalRegistry()
         self._tasks: dict[str, asyncio.Task[AgentState]] = {}
         self._run_by_incident: dict[str, str] = {}
         self._latest_state: dict[str, AgentState] = {}
@@ -64,15 +66,9 @@ class GraphExecutor:
 
     # ── Public entrypoints ──────────────────────────────────────────────
 
-    def submit_review(self, review: HITLReview) -> None:
-        """Resolve a pending gate future, from the WS handler or REST route."""
-        fut = self._approvals.get(review.incident_id)
-        if fut is None or fut.done():
-            raise GraphNotReadyError(
-                f"no pending approval for incident {review.incident_id}",
-                details={"incident_id": review.incident_id},
-            )
-        fut.set_result(review)
+    async def submit_review(self, review: HITLReview) -> None:
+        """Deliver a signed review to the waiting gate (any process)."""
+        await self._approvals.submit(review)
 
     def latest_state(self, incident_id: str) -> AgentState | None:
         """Most recent live snapshot of a run, available mid-flight."""
@@ -83,9 +79,7 @@ class GraphExecutor:
         if not run_id:
             raise GraphNotReadyError("run not found", details={"incident_id": incident_id})
         task = self._tasks.get(run_id)
-        fut = self._approvals.get(incident_id)
-        if fut is not None and not fut.done():
-            fut.cancel()
+        await self._approvals.cancel(incident_id)
         if task is not None and not task.done():
             task.cancel()
             try:
@@ -104,8 +98,7 @@ class GraphExecutor:
             raise ConflictError("incident already has an active run", details={"incident_id": incident_id})
         state = create_initial_state(incident, incident_id=incident_id)
         self._run_by_incident[state.incident_id] = state.run_id
-        loop = asyncio.get_running_loop()
-        self._approvals[state.incident_id] = loop.create_future()
+        await self._approvals.prepare(state.incident_id)
         task = asyncio.create_task(self._execute_run(state), name=f"graph-{state.run_id}")
         self._tasks[state.run_id] = task
         try:
@@ -113,7 +106,7 @@ class GraphExecutor:
         finally:
             self._tasks.pop(state.run_id, None)
             self._run_by_incident.pop(state.incident_id, None)
-            self._approvals.pop(state.incident_id, None)
+            await self._approvals.clear(state.incident_id)
 
     # ── Run pipeline ────────────────────────────────────────────────────
 
@@ -231,6 +224,8 @@ class GraphExecutor:
         return state
 
     async def _execute_node(self, ctx: AgentContext, name: AgentName, base: AgentState) -> AgentState:
+        if await ctx.approval_registry.is_interrupted(base.incident_id):
+            raise asyncio.CancelledError
         spec = GRAPH_SPEC[name]
         handler = self._handlers[spec.handler_key]
         ctx.state = base
@@ -244,7 +239,12 @@ class GraphExecutor:
             snapshot_ref = await self._memory.snapshot(
                 run_id=result.run_id,
                 step_index=result.step_index,
-                blob={"node": name.value, "summary": summary, "status": result.status.value},
+                blob={
+                    "node": name.value,
+                    "summary": summary,
+                    "status": result.status.value,
+                    "state": result.to_dict(),
+                },
             )
             result = result.replace(memory_snapshots=result.memory_snapshots + (snapshot_ref,))
         except Exception:  # noqa: BLE001 — memory snapshots are best-effort

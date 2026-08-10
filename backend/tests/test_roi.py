@@ -1,6 +1,7 @@
 """ROI ledger math."""
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 from datetime import UTC, datetime, timedelta
 
@@ -24,7 +25,7 @@ def _completed_state() -> AgentState:
 
 
 def test_roi_savings(settings, roi) -> None:
-    entry = roi.record(_completed_state())
+    entry = asyncio.run(roi.record(_completed_state()))
 
     assert entry.duration_seconds == pytest.approx(42)
     # human_mttr = 2100s → saved = 2058s = 0.5717h × $150/h = $85.75
@@ -44,14 +45,14 @@ def test_roi_failed_has_no_savings(settings, roi) -> None:
         completed_at=now.isoformat(),
         token_usage=TokenUsage(input_tokens=500, output_tokens=250),
     )
-    entry = roi.record(state)
+    entry = asyncio.run(roi.record(state))
     assert entry.saved_amount == 0
     assert entry.status == "FAILED"
 
 
 def test_roi_summary_aggregates(roi) -> None:
-    roi.record(dataclasses.replace(_completed_state(), incident_id="inc_1"))
-    roi.record(dataclasses.replace(_completed_state(), incident_id="inc_2"))
+    asyncio.run(roi.record(dataclasses.replace(_completed_state(), incident_id="inc_1")))
+    asyncio.run(roi.record(dataclasses.replace(_completed_state(), incident_id="inc_2")))
     summary = roi.summary()
     assert summary["total_incidents"] == 2
     assert summary["resolved"] == 2

@@ -32,7 +32,7 @@ async def ws_stream(websocket: WebSocket) -> None:
         await websocket.send_json({"type": "subscribed", "channels": list(channels)})
 
     async def on_review(review: HITLReview) -> None:
-        service.review(review)
+        await service.review(review)
 
     async def on_resume(incident_id: str) -> None:
         await service.resume(incident_id)
