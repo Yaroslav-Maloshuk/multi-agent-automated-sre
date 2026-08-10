@@ -1,3 +1,5 @@
+<img src="https://github.com/Yaroslav-Maloshuk/multi-agent-automated-sre/blob/main/multi-agent-automated-sre.png" width="1000" height="1000">
+
 # Multi-Agent Automated SRE Workspace
 
 An autonomous, self-healing Site Reliability Engineering engine. It ingests
@@ -47,7 +49,7 @@ events). `POST /api/v1/incidents` remains the generic programmatic entry point.
 | Long-term Memory | PostgreSQL + pgvector (semantic) + BM25/tsvector (lexical), RRF fusion |
 | LLMs | OpenAI / Anthropic / local HuggingFace (provider-agnostic, lazy-imported) |
 | Persistence | PostgreSQL via Prisma ORM (+ raw asyncpg for ROI ledger) |
-| Frontend | React 18 + TypeScript + Tailwind + Recharts + Monaco diff + Xterm |
+| Frontend | React 19 + TypeScript + Tailwind + Recharts + Monaco diff + Xterm |
 | Observability | Structured JSON logging + Langfuse traces (optional, env-gated) |
 | CI/CD | GitHub Actions (CI quality gate + Docker build/push to GHCR), Dependabot |
 | Testing | Pytest 30 tests, ruff, mypy (strict), tsc |
@@ -139,11 +141,11 @@ All three pass on `main` (verified 2026-08-10).
 
 | Metric | Value |
 |---|---|
-| Backend LOC (app) | 5,518 Python |
-| Backend LOC (tests) | 651 Python |
+| Backend LOC (app) | 5,519 Python |
+| Backend LOC (tests) | 652 Python |
 | Frontend LOC | 2,183 TS/TSX |
-| Tests | 30 passed (~6 s, no infra required) |
-| Test coverage | 74 % statement (`pytest --cov`) |
+| Tests | 30 passed (~10 s, no infra required) |
+| Test coverage | 71 % statement (`pytest --cov`) |
 | Lint | 0 issues (ruff + eslint) |
 | Typecheck | 0 issues (mypy strict + tsc) |
 | REST endpoints | 19 (`/api/v1/*`) |
@@ -152,7 +154,7 @@ All three pass on `main` (verified 2026-08-10).
 | Graph nodes | 7 (Ingest → Planner → Log Analyzer / Code Fixer → HITL → Verifier → Deploy) |
 | Agent implementations | 5 (+ registry catalog) |
 | Backend deps | 17 runtime + 7 dev |
-| Frontend deps | 11 runtime + 12 dev |
+| Frontend deps | 8 runtime + 12 dev |
 | Sandbox pool | 3–5 warm, `--network none`, 512 MB / 1.5 CPU quota |
 | Local model cache | Qwen2.5-3B-Instruct — 10 GB on host, auto-mount into backend |
 
