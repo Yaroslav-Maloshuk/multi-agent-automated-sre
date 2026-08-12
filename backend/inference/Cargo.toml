@@ -1,0 +1,21 @@
+[package]
+name = "auto-sre-inference"
+version = "1.0.0"
+edition = "2021"
+description = "Python-free local LLM inference (Candle + Qwen2) exposing an OpenAI-compatible API for the SRE engine when GRAPH/EMBEDDING providers are set to 'local'."
+publish = false
+
+[dependencies]
+anyhow = "1"
+axum = { version = "0.7", features = ["json"] }
+candle-core = { version = "0.11", default-features = false }
+candle-nn = "0.11"
+candle-transformers = { version = "0.11", default-features = false }
+futures = "0.3"
+hf-hub = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tokenizers = "0.23"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

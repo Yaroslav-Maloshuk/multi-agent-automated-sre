@@ -1,6 +1,6 @@
 # Agent execution sandbox image.
 # Agents never run on the host — this image is what they execute inside:
-#   python 3.11 + pytest + flake8, network-isolated, read-only rootfs.
+#   python 3.11 + pytest + ruff, network-isolated, read-only rootfs.
 FROM python:3.11-slim
 
 RUN apt-get update \
@@ -9,7 +9,7 @@ RUN apt-get update \
 
 RUN pip install --no-cache-dir \
         pytest>=8.3.0 \
-        flake8>=7.0.0
+        ruff>=0.9.0
 
 WORKDIR /workspace
 CMD ["sleep", "infinity"]

@@ -1,19 +1,24 @@
-# Python
-__pycache__/
-*.py[cod]
-*.egg-info/
+# Go
+backend/bin/
+backend/coverage.out
+*.test
+
+# Rust
+**/target/
+Cargo.lock.bak
+**/*.rs.bk
+
+# Python (legacy + local dev)
 .venv/
-venv/
-env/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-.coverage.*
-coverage.xml
-htmlcov/
-build/
-dist/
+legacy/**/__pycache__/
+legacy/**/*.py[cod]
+legacy/**/.venv/
+legacy/**/.pytest_cache/
+legacy/**/.mypy_cache/
+legacy/**/.ruff_cache/
+legacy/**/.coverage
+legacy/**/coverage.xml
+legacy/**/db/generated/
 
 # Node
 node_modules/
@@ -28,11 +33,6 @@ npm-debug.log*
 !.env.example
 *.pem
 *.key
-!proto/*.key
-
-# Prisma
-backend/generated/
-backend/db/generated/
 
 # OS / editor
 .DS_Store

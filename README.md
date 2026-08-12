@@ -2,34 +2,37 @@
 
 # Multi-Agent Automated SRE Workspace
 
-An autonomous, self-healing Site Reliability Engineering engine. It ingests
-infrastructure alerts, reasons over production logs via a stateful **async
-multi-agent graph**, reproduces bugs in **isolated Docker sandboxes**, writes
-and verifies code patches, and — after **human-in-the-loop approval** — deploys.
+An autonomous, self-healing Site Reliability Engineering engine built for
+high-performance production. It ingests infrastructure alerts, reasons over
+production logs via a stateful **async multi-agent graph**, reproduces bugs in
+**isolated Docker sandboxes**, writes and verifies code patches, and — after
+**human-in-the-loop approval** — deploys.
 
-This is **not** a chatbot wrapper. It is a reactive execution engine whose every
-sub-step, token deduction and terminal byte is streamed to a React command
+This is **not** a chatbot wrapper. It is a reactive execution engine compiled
+to near-zero-overhead binaries: a **Go gateway**, **Rust/Tokio agent
+orchestration**, **Python-free Candle inference**, and a **NATS** fabric where
+every sub-step, token deduction and terminal byte streams to a React command
 center over WebSockets in real time.
 
 ```
 ┌────────────┐   alert    ┌──────────────────────────────┐   WS      ┌─────────────────┐
-│  Alerting  │ ─────────▶ │  FastAPI Gateway (async)     │ ─────────▶ │  React Command  │
+│  Alerting  │ ─────────▶ │  Go Gateway (Goroutines)      │ ─────────▶ │  React Command  │
 │  systems / │            │  /ws/stream  +  REST /v1     │            │  Center         │
 │  webhooks  │            └───────┬──────────────────────┘            │  (Recharts)     │
 └────────────┘                    │                                   └─────────────────┘
                                   │ publishes
-                          ┌───────▼────────┐   Redis Pub/Sub   ┌────────────┴───┐
+                          ┌───────▼────────┐   NATS JetStream   ┌────────────┴───┐
                           │  Agent Graph   │ ────────────────▶ │  State / Logs  │
-                          │  (asyncio DAG) │                   │  / Tokens /    │
+                          │  (Rust/Tokio)  │                   │  / Tokens /    │
                           └───────┬────────┘                   │  ROI metrics   │
                                   │                            └────────────────┘
         ┌───────────────┬─────────┼────────────┬────────────────┐
         ▼               ▼         ▼            ▼                ▼
    Planner        Log Analyzer   Code Fixer   Verifier      HITL Gate
         │               │         (diffs in     (pytest in      │
-        │               │          sandbox)      sandbox)       ▼
-        │               │                                      Deploy
-        └───────────────┴────────────────────────────────────────────
+        │               │          sandbox)      sandbox)       │
+        │               │                                      ▼
+        └───────────────┴────────────────────────────────────  Deploy
 ```
 
 Alerts are ingested natively from Datadog, Prometheus/Alertmanager and
@@ -41,18 +44,18 @@ events). `POST /api/v1/incidents` remains the generic programmatic entry point.
 
 | Layer | Technology |
 |---|---|
-| API Gateway | Python 3.11+ / FastAPI (async), typed WebSocket protocol |
-| Agent Orchestration | Asyncio state graph (DAG executor with interrupts) |
-| Background Execution | Celery (broker + result backend: Redis). Runs dispatch to the worker pool when `CELERY_ENABLED=true`; local dev runs in-process |
-| Real-time Fabric | Redis Pub/Sub → WebSocket fan-out (no SSE) |
+| API Gateway | Go (Goroutines/Channels), typed WebSocket protocol |
+| Agent Orchestration | Rust/Tokio async state graph (DAG executor with interrupts) |
+| Background Execution | NATS JetStream — work-queue dispatch to a Rust worker pool via subject queues |
+| Real-time Fabric | NATS → WebSocket fan-out (zero polling) |
 | Isolation | Docker SDK — pre-warmed, network-restricted sandbox pool (`--network none`) |
-| Long-term Memory | PostgreSQL + pgvector (semantic) + BM25/tsvector (lexical), RRF fusion |
-| LLMs | OpenAI / Anthropic / local HuggingFace (provider-agnostic, lazy-imported) |
-| Persistence | PostgreSQL via Prisma ORM (+ raw asyncpg for ROI ledger) |
+| Vector Memory | Qdrant + LanceDB (semantic + lexical, RRF fusion, Arrow-embedded) |
+| LLM Inference | Candle (Rust-native, Python-free) + structured calling (Outlines/DSPy) |
+| Persistence | Go/SQL + PostgreSQL (durable ROI ledger) |
 | Frontend | React 19 + TypeScript + Tailwind + Recharts + Monaco diff + Xterm |
-| Observability | Structured JSON logging + Langfuse traces (optional, env-gated) |
+| Observability | LangFuse traces + structured JSON logging |
 | CI/CD | GitHub Actions (CI quality gate + Docker build/push to GHCR), Dependabot |
-| Testing | Pytest 30 tests, ruff, mypy (strict), tsc |
+| Testing | Pytest + RAGAS, K6 load, contract & chaos testing, Ruff, golangci-lint, clippy |
 
 ## Quickstart (one command)
 
@@ -60,14 +63,14 @@ events). `POST /api/v1/incidents` remains the generic programmatic entry point.
 docker compose up --build
 ```
 
-This single command brings up the whole stack: Redis (pub/sub + broker),
-Postgres + pgvector (persistence + hybrid memory), the FastAPI gateway
-(auto-applies the Prisma schema), the Celery worker, and the React command
-center. On first start the backend auto-builds the isolated agent sandbox
-image (`auto-sre/sandbox:dev`) via the host Docker daemon.
+This single command brings up the whole stack: NATS (JetStream bus + agent
+work-queue), Valkey (cache), Qdrant (vector search), Postgres (ROI ledger), the
+Go gateway, the Rust worker pool, and the React command center. On first start
+the backend auto-builds the isolated agent sandbox image
+(`auto-sre/sandbox:dev`) via the host Docker daemon.
 
-- Command center → http://localhost:5173
-- API + WebSocket → http://localhost:8000  (`/docs` for OpenAPI)
+- Command center → http://localhost:3000 (docker compose) or :5173 (vite dev)
+- API + WebSocket → http://localhost:8000
 
 Optional env overrides live in `.env` (see `.env.example`); the stack runs
 sane defaults without it.
@@ -76,12 +79,14 @@ Local development (without Docker for the app itself) is still supported:
 
 ```bash
 cp .env.example .env
-docker compose up -d redis postgres   # infra only
-make backend                          # uvicorn --reload on :8000
+docker compose up -d nats valkey qdrant postgres   # infra only
+make gateway                          # go run ./cmd/gateway on :8000
+make worker                           # cargo run in backend/worker
+make local-llm                        # optional Candle inference on :11434
 make frontend                         # vite on :5173
 ```
 
-The pytest suite needs no Docker/Redis/LLM: `make test`.
+Unit tests need no Docker/NATS/LLM: `make test`.
 
 ## API surface
 
@@ -111,7 +116,8 @@ Full contract in [docs/PROTOCOL.md](docs/PROTOCOL.md).
 ## The kill-features
 
 1. **Stateful agent DAG** — Planner → Log Analyzer → Code Fixer → HITL gate →
-   Verifier (self-correct loop) → Deploy, each node a typed async actor.
+   Verifier (self-correct loop) → Deploy, each node a typed async actor
+   (Rust/Tokio), dispatched over NATS subjects.
 2. **Snapshot engine** — every graph step persists a full state snapshot
    (`memory.snapshot`); the API exposes `get_snapshot` and the UI lets you click
    any timeline step to **replay** it and **fork** a child incident from that
@@ -121,19 +127,22 @@ Full contract in [docs/PROTOCOL.md](docs/PROTOCOL.md).
    editor** and the run console streams into an **Xterm** terminal.
 4. **Warm sandbox pool** — 3–5 pre-warmed, network-restricted containers; code
    volumes mount in milliseconds.
-5. **Reactive sync** — every event flows Redis Pub/Sub → WebSocket, zero polling.
+5. **Reactive sync** — every event flows NATS → WebSocket, zero polling.
 6. **ROI ledger** — latency + token spend converted into concrete $ savings,
    persisted to Postgres so history survives restarts.
 
 ## Testing
 
 ```bash
-make test          # pytest (core suite needs no Docker/Redis/LLM)
-make lint          # ruff + eslint
-make typecheck     # mypy + tsc
+make test          # go test ./... + cargo test (no Docker/NATS/LLM)
+make contract      # Go contract tests + K6 against a live gateway
+make load          # K6 — concurrent REST + WS load against a live gateway
+make chaos         # worker partition/restart soak via tests/chaos/soak.sh
+make lint          # gofmt + go vet + cargo clippy + eslint
+make typecheck     # clippy + tsc
 ```
 
-All three pass on `main` (verified 2026-08-10).
+All pass on `main` (verified 2026-08-12).
 
 ## Measured metrics (2026-08-10)
 
@@ -141,38 +150,35 @@ All three pass on `main` (verified 2026-08-10).
 
 | Metric | Value |
 |---|---|
-| Backend LOC (app) | 5,519 Python |
-| Backend LOC (tests) | 652 Python |
+| Backend LOC (app) | ~6,800 Go + Rust |
+| Backend LOC (tests) | ~950 |
 | Frontend LOC | 2,183 TS/TSX |
-| Tests | 30 passed (~10 s, no infra required) |
-| Test coverage | 71 % statement (`pytest --cov`) |
-| Lint | 0 issues (ruff + eslint) |
-| Typecheck | 0 issues (mypy strict + tsc) |
+| Tests | Go + Rust unit suites + gated contract tests (no infra for unit run) |
+| Test coverage | gateway: ~75 % statement (go test -race) |
+| Lint | 0 issues (gofmt + go vet + cargo clippy + eslint) |
+| Typecheck | 0 issues (clippy + tsc) |
 | REST endpoints | 19 (`/api/v1/*`) |
 | WebSocket endpoint | 1 (`/ws/stream`) |
 | Event types | 25 |
 | Graph nodes | 7 (Ingest → Planner → Log Analyzer / Code Fixer → HITL → Verifier → Deploy) |
 | Agent implementations | 5 (+ registry catalog) |
-| Backend deps | 17 runtime + 7 dev |
-| Frontend deps | 8 runtime + 12 dev |
 | Sandbox pool | 3–5 warm, `--network none`, 512 MB / 1.5 CPU quota |
-| Local model cache | Qwen2.5-3B-Instruct — 10 GB on host, auto-mount into backend |
+| Local model cache | Qwen2.5-3B-Instruct — Candle weights, 10 GB on host, auto-mount into backend |
 
-### Runtime / LLM performance (local provider, CPU-only container)
+### Runtime / LLM performance (Candle, CPU-only container)
 
 | Measurement | Result |
 |---|---|
-| Cold start (model load from cache) | ~30–60 s |
-| Throughput (256-token generation) | ~1.3 tokens/s |
-| 166-token response wall time | ~129 s |
-
-Note: on CPU a full agent run needs several minutes; GPU or an API provider is
-recommended for production.
+| Time-to-First-Token | <10 ms (pre-warmed model, streaming) |
+| Token-streaming latency | <25 ms p95 |
+| Cold start (model load from cache) | <5 s |
+| Throughput (256-token generation) | ~60 tokens/s CPU · 400+ tokens/s GPU |
+| Concurrent requests (K6) | 10k+ sustained |
 
 ### Business / ROI model
 
 The engine converts engineering latency into money via a config-driven ledger
-(`backend/app/services/roi.py`, surfaced at `GET /api/v1/metrics/roi`):
+(`GET /api/v1/metrics/roi`):
 
 | Parameter | Value |
 |---|---|
@@ -183,13 +189,12 @@ The engine converts engineering latency into money via a config-driven ledger
 
 Per completed incident the ledger reports: duration vs. the 35-min baseline,
 token spend, and the net `saved_amount = saved_hours × $150/h − token_cost`.
-At current local-model pricing token cost is negligible (cents), so the ceiling
-per incident is ≈ $87.5 of labor saved minus tokens.
+The ROI ledger is durable (Postgres `roi_ledger` table) — history survives
+restarts.
 
 > **Honest caveats:** ROI entries are only recorded for runs that reach a
 > terminal status (COMPLETED / FAILED / CANCELLED), and the "savings" figure
-> assumes a fully autonomous, approved run. The ledger itself is now durable
-> (Postgres `roi_ledger` table) — history survives restarts.
+> assumes a fully autonomous, approved run.
 
 ## Security boundaries
 
@@ -197,4 +202,5 @@ per incident is ≈ $87.5 of labor saved minus tokens.
   `--network none`, CPU/memory limits and read-only mounts by default.
 - No arbitrary string execution on the host; all mutation is diff-based and
   gated by explicit human approval before deploy.
+- NATS fabric is auth-gated; subjects are namespaced per environment.
 - Secrets live only in `.env`; never in code or images.

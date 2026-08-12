@@ -1,27 +1,62 @@
 # ─────────────────────────────────────────────────────────────────────────
-# Multi-Agent Automated SRE Workspace — single-command stack.
+# Multi-Agent Automated SRE — single-command stack (Rust + Go, no Python).
 #
 #   docker compose up --build
 #
-# Brings up: Redis (pub/sub + broker), Postgres+pgvector (persistence/memory),
-# FastAPI backend (auto-applies Prisma schema), Celery worker, and the React
-# command center. The backend auto-bootstraps the agent sandbox Docker image
-# (`auto-sre/sandbox:dev`) on first start using the host docker daemon.
+# Brings up: NATS JetStream (messaging/queue), Valkey (reactive store),
+# Qdrant (vector memory + snapshots), Postgres (durable state + ROI ledger),
+# the Go gateway (REST + WebSocket + NATS fan-out), the Rust worker pool
+# (agent graph + Docker sandboxes), and the React command center.
+#
+# Optional: `docker compose --profile local-llm up -d` also starts the
+# Python-free Candle inference service (set GRAPH_LLM_PROVIDER=local and
+# EMBEDDING_URL=http://inference:11434 in .env to use it).
 # ─────────────────────────────────────────────────────────────────────────
 
 name: auto-sre
 
 services:
-  redis:
-    image: redis:7-alpine
-    container_name: auto-sre-redis
-    command: ["redis-server", "--appendonly", "yes"]
+  nats:
+    image: nats:2.10-alpine
+    container_name: auto-sre-nats
+    command:
+      - "--jetstream"
+      - "--store_dir=/data"
+      - "--http_port=8222"
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    volumes:
+      - nats-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8222/healthz >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    container_name: auto-sre-valkey
+    command: ["valkey-server", "--appendonly", "yes"]
     ports:
       - "6379:6379"
     volumes:
-      - redis-data:/data
+      - valkey-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: auto-sre-qdrant
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:6333/healthz >/dev/null || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -43,62 +78,72 @@ services:
       timeout: 3s
       retries: 10
 
-  backend:
+  gateway:
     build:
       context: .
-      dockerfile: backend/Dockerfile
-    container_name: auto-sre-backend
+      dockerfile: backend/gateway/Dockerfile
+    container_name: auto-sre-gateway
     environment:
       APP_ENV: development
-      DEBUG: "true"
-      REDIS_URL: redis://redis:6379/0
-      DATABASE_URL: postgresql://sre:sre@postgres:5432/sre
-      CELERY_BROKER_URL: redis://redis:6379/1
-      CELERY_RESULT_BACKEND: redis://redis:6379/2
-      CELERY_ENABLED: "true"
-      CORS_ORIGINS: http://localhost:5173,http://localhost:3000
-      DOCKER_SANDBOX_IMAGE: auto-sre/sandbox:dev
-      AUTO_SRE_SANDBOX_IMAGE_BUILD_PATH: /opt/sandbox
+      NATS_URL: nats://nats:4222
+      VALKEY_URL: valkey://valkey:6379
+      POSTGRES_URL: postgresql://sre:sre@postgres:5432/sre
+      WS_ORIGINS: http://localhost:3000,http://localhost:5173
+      GRAPH_HITL_AUTO_APPROVE: ${GRAPH_HITL_AUTO_APPROVE:-false}
     env_file:
       - path: .env
         required: false
     depends_on:
-      redis:
+      nats:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      qdrant:
         condition: service_healthy
       postgres:
         condition: service_healthy
     ports:
       - "8000:8000"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ./backend:/app
-      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    command: ["./gateway"]
 
   worker:
     build:
       context: .
-      dockerfile: backend/Dockerfile
+      dockerfile: backend/worker/Dockerfile
     container_name: auto-sre-worker
     environment:
       APP_ENV: development
-      REDIS_URL: redis://redis:6379/0
-      DATABASE_URL: postgresql://sre:sre@postgres:5432/sre
-      CELERY_BROKER_URL: redis://redis:6379/1
-      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      NATS_URL: nats://nats:4222
+      QDRANT_URL: http://qdrant:6333
       DOCKER_SANDBOX_IMAGE: auto-sre/sandbox:dev
-      AUTO_SRE_SANDBOX_IMAGE_BUILD_PATH: /opt/sandbox
     env_file:
       - path: .env
         required: false
     depends_on:
-      redis:
+      nats:
         condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      gateway:
+        condition: service_started
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./backend:/app
+
+  inference:
+    image: ghcr.io/auto-sre/inference:local
+    build:
+      context: .
+      dockerfile: backend/inference/Dockerfile
+    container_name: auto-sre-inference
+    profiles: ["local-llm"]
+    environment:
+      HF_MODEL_ID: ${HF_MODEL_ID:-Qwen/Qwen2.5-1.5B-Instruct}
+      PORT: "11434"
+      MAX_SEQ_LEN: "2048"
+    volumes:
       - ${HOME}/.cache/huggingface:/root/.cache/huggingface
-    command: ["celery", "-A", "app.celery_app.celery", "worker", "--loglevel=info"]
+    ports:
+      - "11434:11434"
 
   frontend:
     build:
@@ -109,15 +154,14 @@ services:
       - path: .env
         required: false
     depends_on:
-      - backend
+      - gateway
     ports:
-      - "5173:5173"
-    volumes:
-      - ./frontend:/app
-      - frontend-node-modules:/app/node_modules
-    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+      - "3000:80"
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000/api/v1
 
 volumes:
-  redis-data:
+  nats-data:
+  valkey-data:
+  qdrant-data:
   pg-data:
-  frontend-node-modules:

@@ -1,31 +1,28 @@
 SHELL := /bin/bash
+GOFLAGS ?=
 
-.PHONY: help infra up down logs build dev backend frontend test test-watch lint typecheck prisma-gen proto-gen sandbox-image db-migrate local-deps
+.PHONY: help infra up dev down logs build gateway worker inference sandbox-image test test-rust test-go lint typecheck k6 chaos contract db-migrate local-llm
 
 help:
-	@echo "auto-sre-workspace — Make targets"
-	@echo "  make up / make dev   docker compose up --build  (run the whole stack)"
-	@echo "  make down            docker compose down"
-	@echo "  make logs            docker compose logs -f --tail=200"
-	@echo "  make sandbox-image   Build the isolated agent sandbox Docker image"
-	@echo "  make prisma-gen      Generate Prisma Python client"
-	@echo "  make proto-gen       Generate gRPC stubs from proto/runtime.proto"
-	@echo "  make test            Run backend pytest suite"
-	@echo "  make test-watch      Run backend tests in watch mode"
-	@echo "  make lint            Lint backend (ruff) + frontend (eslint)"
-	@echo "  make typecheck       Typecheck backend (mypy) + frontend (tsc)"
-	@echo "  make db-migrate      Apply Prisma schema migrations"
-	@echo "  make local-deps      Install torch/transformers for the local HF model"
-
-VENV := .venv
-PY := $(VENV)/bin/python
-
-$(VENV):
-	python3.11 -m venv $(VENV) || python3 -m venv $(VENV)
-	$(VENV)/bin/pip install -U pip setuptools wheel
+	@echo "auto-sre — Make targets (Rust workers + Go gateway, no Python)"
+	@echo "  make infra             docker compose up -d nats valkey qdrant postgres"
+	@echo "  make up / make dev     docker compose up --build (full stack)"
+	@echo "  make down              docker compose down"
+	@echo "  make logs              docker compose logs -f --tail=200"
+	@echo "  make gateway           run the Go gateway locally (go run)"
+	@echo "  make worker            run the Rust worker locally (cargo run)"
+	@echo "  make local-llm         docker compose --profile local-llm up -d inference"
+	@echo "  make sandbox-image     build the isolated agent sandbox Docker image"
+	@echo "  make test              Go tests + Rust tests"
+	@echo "  make test-go           go test ./..."
+	@echo "  make test-rust         cargo test (worker + inference)"
+	@echo "  make lint              gofmt + go vet + cargo clippy"
+	@echo "  make k6                k6 load test (needs infra + gateway up)"
+	@echo "  make chaos             chaos/contract soak (needs infra + gateway up)"
+	@echo "  make contract          contract tests (go + k6)"
 
 infra:
-	docker compose up -d redis postgres
+	docker compose up -d nats valkey qdrant postgres
 
 up:
 	docker compose up --build
@@ -38,37 +35,45 @@ down:
 logs:
 	docker compose logs -f --tail=200
 
+build:
+	docker compose build
+
+gateway:
+	cd backend && go run ./cmd/gateway
+
+worker:
+	cd backend/worker && cargo run
+
+local-llm:
+	docker compose --profile local-llm up -d inference
+
 sandbox-image:
 	docker build -t auto-sre/sandbox:dev -f sandbox/Dockerfile sandbox/
 
-prisma-gen:
-	cd backend && prisma generate --schema=db/prisma/schema.prisma
+test: test-go test-rust
 
-proto-gen:
-	cd backend && python -m grpc_tools.protoc -I proto --python_out=generated/proto --pyi_out=generated/proto --grpc_python_out=generated/proto proto/runtime.proto
+test-go:
+	cd backend && go test ./...
 
-db-migrate:
-	cd backend && prisma migrate dev --schema=db/prisma/schema.prisma
-
-local-deps:
-	$(VENV)/bin/pip install -r backend/requirements-local.txt
-
-backend:
-	. $(VENV)/bin/activate && uvicorn app.main:app --reload --port 8000
-
-frontend:
-	cd frontend && npm run dev
-
-test:
-	cd backend && . ../$(VENV)/bin/activate && pytest -q
-
-test-watch:
-	cd backend && . ../$(VENV)/bin/activate && ptw -- -q
+test-rust:
+	cd backend/worker && cargo test
+	cd backend/inference && cargo test
 
 lint:
-	cd backend && . ../$(VENV)/bin/activate && ruff check app tests proto
-	cd frontend && npx eslint src --ext .ts,.tsx
+	cd backend && gofmt -l . && go vet ./...
+	cd backend/worker && cargo clippy --all-targets
+	cd backend/inference && cargo clippy --all-targets
 
-typecheck:
-	cd backend && . ../$(VENV)/bin/activate && mypy app
-	cd frontend && npx tsc --noEmit
+typecheck: lint
+
+k6:
+	k6 run tests/k6/load.js
+
+load: k6
+
+chaos:
+	bash tests/chaos/soak.sh
+
+contract:
+	cd backend && DATABASE_URL_TEST=$${DATABASE_URL_TEST:-postgresql://sre:sre@localhost:5432/sre} NATS_URL_TEST=$${NATS_URL_TEST:-nats://localhost:4222} go test ./... -run Contract -count=1
+	k6 run tests/k6/contract.js

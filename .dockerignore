@@ -1,0 +1,19 @@
+# Keep Docker build contexts lean and secrets out of images.
+.git
+.gitignore
+.venv
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/target
+frontend/node_modules
+frontend/dist
+legacy
+*.md
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store

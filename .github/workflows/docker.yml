@@ -1,6 +1,6 @@
 name: Docker
 
-# Build all four container images and publish them to GitHub Container
+# Build all container images and publish them to GitHub Container
 # Registry (ghcr.io) on `main`, semver tags, or manual dispatch.
 # Pull requests only build (no push) to validate the Dockerfiles.
 
@@ -28,10 +28,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: backend
-            file: backend/Dockerfile
+          - name: gateway
+            file: backend/gateway/Dockerfile
           - name: worker
-            file: backend/Dockerfile
+            file: backend/worker/Dockerfile
+          - name: inference
+            file: backend/inference/Dockerfile
           - name: frontend
             file: frontend/Dockerfile
           - name: sandbox
