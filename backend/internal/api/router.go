@@ -67,6 +67,9 @@ func (a *App) Routes() http.Handler {
 
 	mux := http.NewServeMux()
 
+	mux.HandleFunc("GET /", a.handleDashboard)
+	mux.HandleFunc("GET /api/v1/dashboard/incidents", a.handleDashboardIncidents)
+
 	mux.HandleFunc("GET /api/v1/health", a.handleHealth)
 
 	mux.HandleFunc("POST /api/v1/incidents", a.handleCreateIncident)
@@ -91,6 +94,7 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/collectors", a.handleCollectorStatus)
 
 	mux.HandleFunc("GET /ws/stream", a.handleWebSocket(a.Hub))
+	mux.HandleFunc("GET /api/v1/events/stream", a.handleSSE)
 
 	return a.cors(a.logging(mux))
 }

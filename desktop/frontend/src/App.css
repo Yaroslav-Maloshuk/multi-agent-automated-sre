@@ -1,0 +1,152 @@
+:root {
+  color-scheme: dark;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #0f1115;
+  color: #e6e6e6;
+}
+
+.app {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.app-header h1 {
+  font-size: 20px;
+  margin: 0;
+  color: #ffffff;
+}
+
+.status {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.status-connecting {
+  background: #3a3f4b;
+  color: #c9cdd6;
+}
+
+.status-online {
+  background: #16351f;
+  color: #4ade80;
+}
+
+.status-offline {
+  background: #451414;
+  color: #f87171;
+}
+
+.refresh {
+  margin-left: auto;
+  background: #2563eb;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.refresh:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.error {
+  background: #451414;
+  border: 1px solid #7f1d1d;
+  color: #fca5a5;
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  font-size: 13px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #161a22;
+  border: 1px solid #232833;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 12px 16px;
+  border-bottom: 1px solid #232833;
+  font-size: 14px;
+}
+
+th {
+  background: #1b202b;
+  color: #9aa3b2;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+
+tbody tr:hover {
+  background: #1c212d;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.empty {
+  text-align: center;
+  color: #6b7280;
+  padding: 32px;
+}
+
+.badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.badge-critical,
+.badge-severe {
+  background: #451414;
+  color: #f87171;
+}
+
+.badge-high {
+  background: #442b12;
+  color: #fbbf24;
+}
+
+.badge-medium,
+.badge-moderate {
+  background: #1e3a8a;
+  color: #93c5fd;
+}
+
+.badge-low {
+  background: #16351f;
+  color: #4ade80;
+}

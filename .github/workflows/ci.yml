@@ -126,6 +126,58 @@ jobs:
       - name: Test
         run: cargo test
 
+  rust-proxy:
+    name: Rust Pingora proxy · clippy / test
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: backend/proxy
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install cmake (pingora build dep)
+        run: sudo apt-get update && sudo apt-get install -y cmake
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test
+
+  ai-gateway:
+    name: AI gateway · ruff / pytest / behave
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: ai
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install Python 3.12
+        run: uv python install 3.12
+
+      - name: Sync dependencies
+        run: uv sync --group dev
+
+      - name: Lint (ruff)
+        run: uv run ruff check src tests
+
+      - name: Test (pytest)
+        run: uv run pytest -q --cov=src/ai --cov-report=term
+
+      - name: Test (BDD / behave)
+        run: PYTHONPATH=src uv run behave
+
   frontend:
     name: Frontend · lint / build
     runs-on: ubuntu-latest
@@ -157,6 +209,28 @@ jobs:
           name: frontend-dist
           path: frontend/dist
           if-no-files-found: error
+
+  mobile:
+    name: Mobile (React Native) · typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Type check
+        run: npx tsc --noEmit
 
   compose:
     name: Compose file validation

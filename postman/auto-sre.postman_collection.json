@@ -1,0 +1,112 @@
+{
+  "info": {
+    "_postman_id": "auto-sre-workspace-collection",
+    "name": "auto-sre",
+    "description": "Multi-Agent Automated SRE — gateway REST + WebSocket/SSE + AI gateway (LiteLLM/RAG/ETL/RAGAS).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base", "value": "http://localhost:8000", "type": "string" },
+    { "key": "ai", "value": "http://localhost:8002", "type": "string" },
+    { "key": "incident_id", "value": "inc_demo", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Gateway",
+      "item": [
+        { "name": "Health", "request": { "method": "GET", "url": "{{base}}/api/v1/health" } },
+        {
+          "name": "Create incident",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base}}/api/v1/incidents",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Disk full on node-7\",\n  \"summary\": \"on_filesystem_space fires on node-7\",\n  \"severity\": \"high\"\n}"
+            }
+          }
+        },
+        { "name": "List incidents", "request": { "method": "GET", "url": "{{base}}/api/v1/incidents" } },
+        { "name": "Get incident", "request": { "method": "GET", "url": "{{base}}/api/v1/incidents/{{incident_id}}" } },
+        { "name": "Run incident", "request": { "method": "POST", "url": "{{base}}/api/v1/incidents/{{incident_id}}/run" } },
+        { "name": "List agents", "request": { "method": "GET", "url": "{{base}}/api/v1/agents" } },
+        { "name": "Sandbox stats", "request": { "method": "GET", "url": "{{base}}/api/v1/sandboxes" } },
+        { "name": "Warm sandboxes", "request": { "method": "POST", "url": "{{base}}/api/v1/sandboxes/warm" } },
+        { "name": "ROI metrics", "request": { "method": "GET", "url": "{{base}}/api/v1/metrics/roi" } },
+        { "name": "HTMX dashboard", "request": { "method": "GET", "url": "{{base}}/" } },
+        { "name": "WebSocket stream", "request": { "method": "GET", "url": "ws://localhost:8000/ws/stream?channels=*" } },
+        { "name": "SSE events", "request": { "method": "GET", "url": "{{base}}/api/v1/events/stream" } }
+      ]
+    },
+    {
+      "name": "AI Gateway",
+      "item": [
+        { "name": "Health", "request": { "method": "GET", "url": "{{ai}}/health" } },
+        { "name": "Providers", "request": { "method": "GET", "url": "{{ai}}/v1/providers" } },
+        {
+          "name": "Chat completion",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{ai}}/v1/chat/completions",
+            "body": { "mode": "raw", "raw": "{\n  \"model\": \"local/test\",\n  \"messages\": [{\"role\": \"user\", \"content\": \"planner: plan the incident\"}]\n}" }
+          }
+        },
+        {
+          "name": "Chat completion (SSE stream)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{ai}}/v1/chat/completions",
+            "body": { "mode": "raw", "raw": "{\n  \"model\": \"local/test\",\n  \"stream\": true,\n  \"messages\": [{\"role\": \"user\", \"content\": \"planner: plan the incident\"}]\n}" }
+          }
+        },
+        {
+          "name": "Embeddings",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{ai}}/v1/embeddings",
+            "body": { "mode": "raw", "raw": "{\n  \"input\": \"no space left on device\"\n}" }
+          }
+        },
+        {
+          "name": "Structured extraction",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{ai}}/v1/structured",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"log_analyzer: diagnose\",\n  \"schema\": {\"properties\": {\"root_cause\": {\"type\": \"string\"}, \"confidence\": {\"type\": \"number\"}}}\n}"
+            }
+          }
+        },
+        { "name": "DSPy plan", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{ai}}/v1/dspy/plan", "body": { "mode": "raw", "raw": "{\n  \"context\": \"disk full on node-1\"\n}" } } },
+        { "name": "RAG index", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{ai}}/v1/rag/index", "body": { "mode": "raw", "raw": "{}" } } },
+        { "name": "RAG search", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{ai}}/v1/rag/search", "body": { "mode": "raw", "raw": "{\n  \"query\": \"disk full\",\n  \"top_k\": 3\n}" } } },
+        { "name": "Analytics (DuckDB)", "request": { "method": "GET", "url": "{{ai}}/v1/analytics" } },
+        {
+          "name": "RAGAS eval",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{ai}}/v1/eval",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"questions\": [\"disk full?\"],\n  \"answers\": [\"clean /var/log and rotate old logs\"],\n  \"contexts\": [[\"clean /var/log and rotate old logs\"]],\n  \"ground_truths\": [[\"clean /var/log\"]]\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Pingora Proxy",
+      "item": [
+        { "name": "Gateway via proxy", "request": { "method": "GET", "url": "http://localhost:8080/api/v1/health" } },
+        { "name": "AI gateway via proxy", "request": { "method": "GET", "url": "http://localhost:8080/v1/providers" } }
+      ]
+    }
+  ]
+}

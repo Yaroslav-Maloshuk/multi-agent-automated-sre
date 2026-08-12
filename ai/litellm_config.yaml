@@ -1,0 +1,38 @@
+# ─────────────────────────────────────────────────────────────────────────
+# LiteLLM proxy config — one OpenAI-compatible surface in front of every
+# LLM provider in the stack: OpenAI, Anthropic, vLLM, Ray Serve and Candle.
+# Start with: docker compose --profile llm-routing up -d litellm
+# ─────────────────────────────────────────────────────────────────────────
+
+model_list:
+  - model_name: openai/gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+  - model_name: anthropic/claude-sonnet-4
+    litellm_params:
+      model: anthropic/claude-sonnet-4-20250514
+      api_key: os.environ/ANTHROPIC_API_KEY
+  - model_name: vllm/qwen
+    litellm_params:
+      model: openai/Qwen/Qwen2.5-1.5B-Instruct
+      api_base: http://vllm:8001/v1
+      api_key: EMPTY
+  - model_name: ray/qwen
+    litellm_params:
+      model: openai/Qwen/Qwen2.5-1.5B-Instruct
+      api_base: http://ray:8001/v1
+      api_key: EMPTY
+  - model_name: candle/qwen
+    litellm_params:
+      model: openai/Qwen/Qwen2.5-1.5B-Instruct
+      api_base: http://inference:11434/v1
+      api_key: EMPTY
+
+router_settings:
+  enable_loadbalancing: true
+  routing_strategy: usage-based-routing-v2
+  num_retries: 2
+
+litellm_settings:
+  drop_params: true

@@ -96,3 +96,60 @@ func TestControlHandlerInvoked(t *testing.T) {
 	}
 	_ = got
 }
+
+func TestSSESubscriberReceivesFanout(t *testing.T) {
+	h := NewHub(nil)
+	go h.Run()
+
+	sub, cleanup := h.SubscribeSSE([]string{"incident:abc"})
+	defer cleanup()
+
+	h.Broadcast(envelope.New(envelope.AgentLog, "incident:abc").WithPayload(map[string]any{"text": "hi"}))
+
+	select {
+	case raw := <-sub:
+		var e envelope.Envelope
+		if err := json.Unmarshal(raw, &e); err != nil {
+			t.Fatalf("bad payload: %v", err)
+		}
+		if e.Type != envelope.AgentLog {
+			t.Fatalf("type = %s", e.Type)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for SSE fanout")
+	}
+}
+
+func TestSSEWildcardSubscriberReceivesAll(t *testing.T) {
+	h := NewHub(nil)
+	go h.Run()
+
+	sub, cleanup := h.SubscribeSSE([]string{"*"})
+	defer cleanup()
+
+	h.Broadcast(envelope.New(envelope.GraphStatus, "incident:xyz"))
+
+	select {
+	case <-sub:
+		// expected: wildcard receives every channel
+	case <-time.After(2 * time.Second):
+		t.Fatal("wildcard SSE subscriber got nothing")
+	}
+}
+
+func TestSSECleanupStopsDelivery(t *testing.T) {
+	h := NewHub(nil)
+	go h.Run()
+
+	sub, cleanup := h.SubscribeSSE([]string{"incident:abc"})
+	cleanup()
+
+	h.Broadcast(envelope.New(envelope.AgentLog, "incident:abc"))
+
+	select {
+	case raw := <-sub:
+		t.Fatalf("cleaned-up subscriber still receives events: %s", raw)
+	case <-time.After(300 * time.Millisecond):
+		// expected
+	}
+}

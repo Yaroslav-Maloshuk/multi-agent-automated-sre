@@ -23,6 +23,7 @@ type Hub struct {
 	register  chan *Client
 	unreg     chan *Client
 	onControl ControlHandler
+	sse       *sseSink
 }
 
 func (h *Hub) SetControlHandler(handler ControlHandler) {
@@ -82,10 +83,14 @@ func (h *Hub) Run() {
 		case env := <-h.broadcast:
 			h.mu.RLock()
 			clients := h.channels[env.Channel]
+			sse := h.sse
 			payload, err := env.Marshal()
 			h.mu.RUnlock()
 			if err != nil {
 				continue
+			}
+			if sse != nil {
+				sse.fanout(env.Channel, payload)
 			}
 			for c := range clients {
 				select {

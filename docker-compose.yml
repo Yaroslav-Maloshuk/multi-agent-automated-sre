@@ -1,16 +1,19 @@
 # ─────────────────────────────────────────────────────────────────────────
-# Multi-Agent Automated SRE — single-command stack (Rust + Go, no Python).
+# Multi-Agent Automated SRE — single-command stack (Rust + Go + Python).
 #
 #   docker compose up --build
 #
 # Brings up: NATS JetStream (messaging/queue), Valkey (reactive store),
 # Qdrant (vector memory + snapshots), Postgres (durable state + ROI ledger),
-# the Go gateway (REST + WebSocket + NATS fan-out), the Rust worker pool
-# (agent graph + Docker sandboxes), and the React command center.
+# the Go gateway (REST + WebSocket + SSE + Templ/HTMX dashboard), the Rust
+# worker pool (agent graph + Docker sandboxes), the Pingora edge proxy, the
+# FastAPI AI gateway (LiteLLM routing, hybrid RAG, ETL, RAGAS), and the
+# React command center.
 #
-# Optional: `docker compose --profile local-llm up -d` also starts the
-# Python-free Candle inference service (set GRAPH_LLM_PROVIDER=local and
-# EMBEDDING_URL=http://inference:11434 in .env to use it).
+# Optional profiles:
+#   --profile local-llm    Candle (Rust, Python-free) OpenAI-compatible endpoint
+#   --profile llm-routing  LiteLLM proxy on :4000 in front of every provider
+#   --profile gpu-llm      vLLM (:8001) + Ray Serve dashboard (:8265)
 # ─────────────────────────────────────────────────────────────────────────
 
 name: auto-sre
@@ -145,6 +148,91 @@ services:
     ports:
       - "11434:11434"
 
+  # ── AI / LLM infrastructure ────────────────────────────────────────────
+  ai:
+    build:
+      context: .
+      dockerfile: ai/Dockerfile
+    container_name: auto-sre-ai
+    environment:
+      AI_QDRANT_URL: http://qdrant:6333
+      AI_QDRANT_COLLECTION: sre_snapshots
+      AI_LANCEDB_PATH: /data/lancedb
+      AI_SQLITE_PATH: /data/vectorless.db
+      AI_VLLM_URL: http://vllm:8001
+      AI_CANDLE_URL: http://inference:11434
+    env_file:
+      - path: .env
+        required: false
+    depends_on:
+      - qdrant
+    volumes:
+      - ai-data:/data
+    ports:
+      - "8002:8002"
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: auto-sre-litellm
+    profiles: ["llm-routing"]
+    command:
+      - "--config"
+      - "/app/litellm_config.yaml"
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    volumes:
+      - ./ai/litellm_config.yaml:/app/litellm_config.yaml
+    ports:
+      - "4000:4000"
+    depends_on:
+      - inference
+
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: auto-sre-vllm
+    profiles: ["gpu-llm"]
+    command: ["--model", "${HF_MODEL_ID:-Qwen/Qwen2.5-1.5B-Instruct}", "--port", "8001"]
+    volumes:
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
+    ports:
+      - "8001:8001"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  ray:
+    image: rayproject/ray:latest-py312
+    container_name: auto-sre-ray
+    profiles: ["gpu-llm"]
+    command: ["ray", "start", "--head", "--port", "6379", "--dashboard-host", "0.0.0.0"]
+    ports:
+      - "8265:8265"
+      - "10001:10001"
+
+  # ── Pingora edge ────────────────────────────────────────────────────────
+  proxy:
+    build:
+      context: .
+      dockerfile: backend/proxy/Dockerfile
+    container_name: auto-sre-proxy
+    environment:
+      GATEWAY_HOST: gateway
+      GATEWAY_PORT: "8000"
+      AI_HOST: ai
+      AI_PORT: "8002"
+      CANDLE_HOST: inference
+      CANDLE_PORT: "11434"
+    depends_on:
+      - gateway
+      - ai
+    ports:
+      - "8080:8080"
+
   frontend:
     build:
       context: .
@@ -165,3 +253,4 @@ volumes:
   valkey-data:
   qdrant-data:
   pg-data:
+  ai-data:

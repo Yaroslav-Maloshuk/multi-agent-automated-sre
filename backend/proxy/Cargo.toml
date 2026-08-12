@@ -1,0 +1,12 @@
+[package]
+name = "auto-sre-proxy"
+version = "1.0.0"
+edition = "2021"
+description = "Pingora reverse proxy in front of the SRE gateway, AI gateway and Candle inference."
+
+[dependencies]
+pingora = { version = "0.8", features = ["openssl", "proxy"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
+async-trait = "0.1"
+log = "0.4"
+env_logger = "0.11"
