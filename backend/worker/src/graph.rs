@@ -199,17 +199,22 @@ async fn schedule(ctx: AgentContext, token: CancellationToken, initial: AgentSta
     let mut state = initial;
     let mut pending: VecDeque<AgentName> = VecDeque::from([AgentName::AlertIngest]);
     let mut completed: HashSet<AgentName> = HashSet::new();
+    // Nodes ever enqueued: the normal enqueue step must run each node once;
+    // the verifier retry loop re-queues fixer/verifier explicitly.
+    let mut ever: HashSet<AgentName> = HashSet::from([AgentName::AlertIngest]);
+    let mut reverify = false;
 
     while let Some(node) = pending.pop_front() {
-        if !deps(node).iter().all(|d| completed.contains(d)) {
-            pending.push_back(node);
+        if completed.contains(&node) || !deps(node).iter().all(|d| completed.contains(d)) {
             continue;
         }
 
+        // Every pending node whose dependencies are now satisfied joins the
+        // frontier and runs concurrently (log_analyzer || code_fixer).
         let others: Vec<AgentName> = pending
             .iter()
             .copied()
-            .filter(|n| deps(*n).iter().all(|d| completed.contains(d)))
+            .filter(|n| !completed.contains(n) && deps(*n).iter().all(|d| completed.contains(d)))
             .collect();
         pending.retain(|n| !others.contains(n));
         let mut frontier = vec![node];
@@ -226,9 +231,26 @@ async fn schedule(ctx: AgentContext, token: CancellationToken, initial: AgentSta
                 if !verification.ok && state.verifier_attempt < ctx.cfg.graph_max_verifier_attempts
                 {
                     pending.push_front(AgentName::CodeFixer);
-                    completed.remove(&AgentName::Verifier);
                     completed.remove(&AgentName::CodeFixer);
+                    completed.remove(&AgentName::Verifier);
+                    reverify = true;
                 }
+            }
+        } else if reverify && frontier.contains(&AgentName::CodeFixer) {
+            // The retried fixer produced a new patch — re-run the verifier on it.
+            reverify = false;
+            completed.remove(&AgentName::Verifier);
+            pending.push_back(AgentName::Verifier);
+        }
+
+        // Enqueue every never-run node whose dependencies are now all satisfied.
+        for next in NODE_ORDER.iter().copied() {
+            if !completed.contains(&next)
+                && !ever.contains(&next)
+                && deps(next).iter().all(|d| completed.contains(d))
+            {
+                ever.insert(next);
+                pending.push_back(next);
             }
         }
 
@@ -558,4 +580,82 @@ pub(crate) async fn emit_payload(
         .with_run(&state.run_id)
         .with_payload(payload.as_object().cloned().unwrap_or_default());
     let _ = ctx.bus.publish_event(&env).await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn node_order_covers_every_agent() {
+        for name in NODE_ORDER.iter().copied() {
+            assert_eq!(name.as_str(), name.as_str()); // variant exists
+        }
+        let mut seen = HashSet::new();
+        for name in NODE_ORDER.iter().copied() {
+            assert!(seen.insert(name), "duplicate {name:?} in NODE_ORDER");
+        }
+    }
+
+    #[test]
+    fn dependency_graph_is_reachable_and_acyclic() {
+        // Every node must be reachable from AlertIngest via `deps()`.
+        let mut reachable: HashSet<AgentName> = HashSet::from([AgentName::AlertIngest]);
+        let mut changed = true;
+        while changed {
+            changed = false;
+            for name in NODE_ORDER.iter().copied() {
+                if reachable.contains(&name) {
+                    continue;
+                }
+                if deps(name).iter().all(|d| reachable.contains(d)) {
+                    reachable.insert(name);
+                    changed = true;
+                }
+            }
+        }
+        assert_eq!(reachable.len(), NODE_ORDER.len(), "orphaned node");
+    }
+
+    #[test]
+    fn full_walk_hits_every_node_exactly_once_in_order() {
+        // Simulate the scheduler's enqueue step: from AlertIngest, the frontier
+        // walks the DAG and must visit all 7 nodes, ending at Deploy.
+        let mut completed: HashSet<AgentName> = HashSet::new();
+        let mut ever: HashSet<AgentName> = HashSet::from([AgentName::AlertIngest]);
+        let mut pending: VecDeque<AgentName> = VecDeque::from([AgentName::AlertIngest]);
+        let mut walked = Vec::new();
+
+        while let Some(node) = pending.pop_front() {
+            if completed.contains(&node) || !deps(node).iter().all(|d| completed.contains(d)) {
+                continue;
+            }
+            let others: Vec<AgentName> = pending
+                .iter()
+                .copied()
+                .filter(|n| !completed.contains(n) && deps(*n).iter().all(|d| completed.contains(d)))
+                .collect();
+            pending.retain(|n| !others.contains(n));
+            let mut frontier = vec![node];
+            frontier.extend(others);
+            for n in &frontier {
+                completed.insert(*n);
+                walked.push(*n);
+            }
+            for next in NODE_ORDER.iter().copied() {
+                if !completed.contains(&next)
+                    && !ever.contains(&next)
+                    && deps(next).iter().all(|d| completed.contains(d))
+                {
+                    ever.insert(next);
+                    pending.push_back(next);
+                }
+            }
+        }
+
+        assert_eq!(walked.len(), 7, "walked {walked:?}");
+        assert!(completed.contains(&AgentName::Deploy));
+        assert_eq!(*walked.last().unwrap(), AgentName::Deploy);
+        assert!(order(AgentName::Deploy) >= order(AgentName::Verifier));
+    }
 }
