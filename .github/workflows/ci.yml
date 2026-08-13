@@ -178,6 +178,37 @@ jobs:
       - name: Test (BDD / behave)
         run: PYTHONPATH=src uv run behave
 
+  e2e-smoke:
+    name: E2E · stack smoke (gateway + AI)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install Python 3.12
+        run: uv python install 3.12
+
+      - name: Sync dependencies
+        working-directory: ai
+        run: uv sync --group dev
+
+      - name: Start AI gateway
+        working-directory: ai
+        run: |
+          PYTHONPATH=src uv run uvicorn ai.main:app --port 8002 --log-level warning &
+          echo $! > /tmp/ai.pid
+          sleep 5
+          curl -sf http://localhost:8002/health
+
+      - name: E2E smoke
+        run: bash tests/e2e/smoke.sh
+
+      - name: Stop AI gateway
+        if: always()
+        run: kill $(cat /tmp/ai.pid) 2>/dev/null || true
+
   frontend:
     name: Frontend · lint / build
     runs-on: ubuntu-latest

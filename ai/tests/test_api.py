@@ -82,6 +82,21 @@ def test_dspy_plan_shape():
     assert plan["plan"]
 
 
+def test_remote_model_falls_back_when_litellm_is_absent():
+    # No litellm in the slim/offline env: a remote model name must degrade to
+    # the deterministic local provider instead of returning 500.
+    resp = client.post(
+        "/v1/structured",
+        json={
+            "model": "openai/gpt-4o",
+            "prompt": "log_analyzer: diagnose",
+            "schema": {"type": "object", "properties": {"root_cause": {"type": "string"}}},
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.json()["value"]["root_cause"]
+
+
 def test_rag_search_after_index():
     client.post("/v1/rag/index", json={})
     resp = client.post("/v1/rag/search", json={"query": "disk full", "top_k": 3})

@@ -16,4 +16,4 @@ RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev
 
 ENV PATH="/app/.venv/bin:$PATH"
 EXPOSE 8002
-CMD ["uvicorn", "ai.main:app", "--host", "0.0.0.0", "--port", "8002"]
+CMD ["uvicorn", "ai.main:app", "--app-dir", "/app/src", "--host", "0.0.0.0", "--port", "8002"]

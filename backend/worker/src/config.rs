@@ -18,6 +18,8 @@ pub struct WorkerConfig {
     pub anthropic_model: String,
     pub candle_url: String,
     pub candle_model: String,
+    pub ai_url: String,
+    pub ai_model: String,
 
     pub embedding_url: Option<String>,
     pub embedding_model: String,
@@ -109,6 +111,8 @@ impl WorkerConfig {
             anthropic_model: env("ANTHROPIC_MODEL", "claude-sonnet-4-20250514"),
             candle_url: env("CANDLE_URL", "http://localhost:11434"),
             candle_model: env("CANDLE_MODEL", "Qwen/Qwen2.5-3B-Instruct"),
+            ai_url: env("AI_URL", "http://localhost:8002/v1"),
+            ai_model: env("AI_MODEL", "local/Qwen/Qwen2.5-3B-Instruct"),
 
             embedding_url: env_opt("EMBEDDING_URL"),
             embedding_model: env("EMBEDDING_MODEL", "text-embedding-3-small"),

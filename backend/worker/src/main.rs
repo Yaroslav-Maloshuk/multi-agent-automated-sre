@@ -48,7 +48,13 @@ async fn main() -> anyhow::Result<()> {
 
     let llm: Arc<dyn llm::Llm> = Arc::from(llm::build_router(&cfg));
     let embed = llm::build_embedding_fn(&cfg);
-    let memory = Arc::new(memory::QdrantMemory::connect(&cfg, embed).await?);
+    // With LLM_PROVIDER=ai the worker reasons over the AI gateway's hybrid RAG
+    // (Qdrant + LanceDB + vectorless PageIndex, RRF); otherwise Qdrant memory.
+    let memory: Arc<dyn memory::Memory> = if cfg.llm_provider == "ai" {
+        Arc::new(memory::GatewayMemory::connect(&cfg, embed).await?)
+    } else {
+        Arc::new(memory::QdrantMemory::connect(&cfg, embed).await?)
+    };
 
     let mut pool = sandbox::SandboxPool::connect(&cfg).await?;
     pool.warm().await?;

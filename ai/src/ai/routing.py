@@ -84,7 +84,12 @@ async def complete(model: str, messages: list[dict[str, Any]]) -> str:
     provider, name = parse_model(model)
     if provider == "local":
         return await _local.complete(messages)
-    return await _via_litellm(model, messages)
+    try:
+        return await _via_litellm(model, messages)
+    except ImportError:
+        # LiteLLM absent (offline / slim image): degrade to the deterministic
+        # local provider instead of 500ing — the engine never stalls.
+        return await _local.complete(messages)
 
 
 async def stream(model: str, messages: list[dict[str, Any]]) -> AsyncIterator[str]:
@@ -95,7 +100,13 @@ async def stream(model: str, messages: list[dict[str, Any]]) -> AsyncIterator[st
         for token in text.split(" "):
             yield token
         return
-    import litellm  # heavy, lazy
+    try:
+        import litellm  # heavy, lazy
+    except ImportError:
+        text = await _local.complete(messages)
+        for token in text.split(" "):
+            yield token
+        return
 
     async for chunk in litellm.acompletion(model=model, messages=messages, stream=True):
         delta = chunk.choices[0].delta

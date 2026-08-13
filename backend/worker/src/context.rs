@@ -11,7 +11,7 @@ use serde_json::{json, Map, Value};
 use crate::bus::{channel_incident, Bus};
 use crate::config::WorkerConfig;
 use crate::llm::Llm;
-use crate::memory::QdrantMemory;
+use crate::memory::Memory;
 use crate::sandbox::SandboxPool;
 use crate::state::{AgentState, TokenUsage};
 
@@ -33,7 +33,7 @@ pub const EVENT_REVIEW_DECIDED: &str = "hitl.review_decided";
 pub struct AgentContext {
     pub bus: Bus,
     pub llm: Arc<dyn Llm>,
-    pub memory: Arc<QdrantMemory>,
+    pub memory: Arc<dyn Memory>,
     pub pool: Arc<Mutex<SandboxPool>>,
     pub cfg: WorkerConfig,
 }

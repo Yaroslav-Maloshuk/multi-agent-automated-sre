@@ -3,7 +3,7 @@
 //! plus the snapshot engine. Replaces pgvector + BM25 with a Python-free,
 //! Arrow-embedded vector store.
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use serde_json::{json, Map, Value};
 use std::time::Duration;
 
@@ -16,6 +16,34 @@ pub struct MemoryHit {
     pub text: String,
     pub score: f64,
     pub payload: Map<String, Value>,
+}
+
+/// Retrieval contract shared by the Qdrant memory and the AI-gateway RAG
+/// (Qdrant + LanceDB + vectorless PageIndex with RRF fusion). Agents only
+/// depend on this trait, so the backing store is a deployment detail.
+#[async_trait::async_trait]
+pub trait Memory: Send + Sync {
+    fn name(&self) -> &'static str;
+    async fn hybrid_search(&self, query: &str, top_k: usize) -> Result<Vec<MemoryHit>>;
+    async fn index_document(
+        &self,
+        doc_id: &str,
+        text: &str,
+        metadata: Map<String, Value>,
+    ) -> Result<()>;
+    #[allow(clippy::too_many_arguments)]
+    async fn snapshot(
+        &self,
+        snap_ref: &str,
+        incident_id: &str,
+        run_id: &str,
+        step_index: usize,
+        node: &str,
+        summary: &str,
+        status: &str,
+        state: Value,
+    ) -> Result<()>;
+    async fn get_snapshot(&self, snap_ref: &str) -> Result<Option<Value>>;
 }
 
 pub struct QdrantMemory {
@@ -225,5 +253,193 @@ impl QdrantMemory {
             .as_array()
             .and_then(|arr| arr.first())
             .map(|p| p["payload"].clone()))
+    }
+}
+
+#[async_trait::async_trait]
+impl Memory for QdrantMemory {
+    fn name(&self) -> &'static str {
+        "qdrant"
+    }
+
+    async fn hybrid_search(&self, query: &str, top_k: usize) -> Result<Vec<MemoryHit>> {
+        QdrantMemory::hybrid_search(self, query, top_k).await
+    }
+
+    async fn index_document(
+        &self,
+        doc_id: &str,
+        text: &str,
+        metadata: Map<String, Value>,
+    ) -> Result<()> {
+        QdrantMemory::index_document(self, doc_id, text, metadata).await
+    }
+
+    async fn snapshot(
+        &self,
+        snap_ref: &str,
+        incident_id: &str,
+        run_id: &str,
+        step_index: usize,
+        node: &str,
+        summary: &str,
+        status: &str,
+        state: Value,
+    ) -> Result<()> {
+        QdrantMemory::snapshot(
+            self, snap_ref, incident_id, run_id, step_index, node, summary, status, state,
+        )
+        .await
+    }
+
+    async fn get_snapshot(&self, snap_ref: &str) -> Result<Option<Value>> {
+        QdrantMemory::get_snapshot(self, snap_ref).await
+    }
+}
+
+/// Retrieval backed by the FastAPI AI gateway's hybrid RAG — Qdrant, LanceDB
+/// and the vectorless SQLite PageIndex fused with RRF. Used when the worker is
+/// configured with `LLM_PROVIDER=ai` so agents reason over the full corpus.
+/// Snapshots and evidence indexing still land in Qdrant via the inner memory.
+pub struct GatewayMemory {
+    http: reqwest::Client,
+    base: String,
+    qdrant: QdrantMemory,
+}
+
+impl GatewayMemory {
+    pub async fn connect(cfg: &WorkerConfig, embed: Option<EmbeddingFn>) -> Result<GatewayMemory> {
+        Ok(GatewayMemory {
+            http: reqwest::Client::builder()
+                .timeout(Duration::from_secs(30))
+                .build()
+                .context("http client")?,
+            base: cfg.ai_url.trim_end_matches('/').to_string(),
+            qdrant: QdrantMemory::connect(cfg, embed).await?,
+        })
+    }
+}
+
+#[async_trait::async_trait]
+impl Memory for GatewayMemory {
+    fn name(&self) -> &'static str {
+        "ai-gateway-rag"
+    }
+
+    async fn hybrid_search(&self, query: &str, top_k: usize) -> Result<Vec<MemoryHit>> {
+        let resp = self
+            .http
+            .post(format!("{}/rag/search", self.base))
+            .json(&json!({"query": query, "top_k": top_k}))
+            .send()
+            .await?;
+        if !resp.status().is_success() {
+            return Err(anyhow!("rag search error {}", resp.status()));
+        }
+        let data: Value = resp.json().await?;
+        let mut out = Vec::new();
+        for (i, hit) in data["hits"].as_array().unwrap_or(&vec![]).iter().enumerate() {
+            let text = hit["text"].as_str().unwrap_or_default().to_string();
+            let mut payload = Map::new();
+            if let Some(source) = hit["source"].as_str() {
+                payload.insert("source".into(), Value::String(source.to_string()));
+            }
+            out.push(MemoryHit {
+                id: hit["source"]
+                    .as_str()
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| format!("hit-{i}")),
+                text,
+                score: hit["score"].as_f64().unwrap_or(0.0),
+                payload,
+            });
+        }
+        Ok(out)
+    }
+
+    async fn index_document(
+        &self,
+        doc_id: &str,
+        text: &str,
+        metadata: Map<String, Value>,
+    ) -> Result<()> {
+        self.qdrant.index_document(doc_id, text, metadata).await
+    }
+
+    async fn snapshot(
+        &self,
+        snap_ref: &str,
+        incident_id: &str,
+        run_id: &str,
+        step_index: usize,
+        node: &str,
+        summary: &str,
+        status: &str,
+        state: Value,
+    ) -> Result<()> {
+        self.qdrant
+            .snapshot(snap_ref, incident_id, run_id, step_index, node, summary, status, state)
+            .await
+    }
+
+    async fn get_snapshot(&self, snap_ref: &str) -> Result<Option<Value>> {
+        self.qdrant.get_snapshot(snap_ref).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn gateway_memory_parses_ai_rag_hits() {
+        use std::io::{Read, Write};
+        use std::sync::{Arc, Mutex};
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let request_line = Arc::new(Mutex::new(String::new()));
+        let captured = Arc::clone(&request_line);
+
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 8192];
+            let n = stream.read(&mut buf).unwrap();
+            let head = String::from_utf8_lossy(&buf[..n]);
+            *captured.lock().unwrap() = head.lines().next().unwrap_or_default().to_string();
+            let body = concat!(
+                r#"{"query":"disk full","hits":["#,
+                r#"{"text":"clean /var/log","score":0.91,"source":"runbook-1"},"#,
+                r#"{"text":"rotate old logs","score":0.72,"source":"runbook-2"}]}"#
+            );
+            let resp = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            stream.write_all(resp.as_bytes()).unwrap();
+        });
+
+        let inner = QdrantMemory {
+            http: reqwest::Client::new(),
+            base: "http://127.0.0.1:9".into(),
+            memory_collection: "m".into(),
+            snapshot_collection: "s".into(),
+            embed: None,
+        };
+        let g = GatewayMemory {
+            http: reqwest::Client::new(),
+            base: format!("http://{addr}/v1"),
+            qdrant: inner,
+        };
+
+        assert_eq!(g.name(), "ai-gateway-rag");
+        let hits = g.hybrid_search("disk full", 3).await.expect("rag search");
+        assert_eq!(hits.len(), 2);
+        assert_eq!(hits[0].text, "clean /var/log");
+        assert_eq!(hits[0].score, 0.91);
+        assert_eq!(hits[0].payload["source"], json!("runbook-1"));
+
+        let line = request_line.lock().unwrap().clone();
+        assert!(line.starts_with("POST /v1/rag/search"), "got {line}");
     }
 }

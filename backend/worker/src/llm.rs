@@ -240,6 +240,14 @@ pub fn build_router(cfg: &WorkerConfig) -> Box<dyn Llm> {
                 reason: "OPENAI_API_KEY not set".into(),
             })
         }
+        // The FastAPI AI gateway: LiteLLM routing, structured calling, RAG and
+        // embeddings behind one OpenAI-compatible surface (`AI_URL`, :8002).
+        "ai" => Box::new(OpenAiCompatible::new(
+            &cfg.ai_url,
+            &cfg.ai_model,
+            None,
+            true,
+        )),
         _ => Box::new(OpenAiCompatible::new(
             &cfg.candle_url,
             &cfg.candle_model,
@@ -250,7 +258,12 @@ pub fn build_router(cfg: &WorkerConfig) -> Box<dyn Llm> {
 }
 
 pub fn build_embedding_fn(cfg: &WorkerConfig) -> Option<EmbeddingFn> {
-    let url = cfg.embedding_url.clone()?;
+    // EMBEDDING_URL wins; otherwise fall back to the AI gateway's
+    // `/v1/embeddings` (sentence-transformers) when the `ai` provider is set.
+    let url = cfg
+        .embedding_url
+        .clone()
+        .or_else(|| (cfg.llm_provider == "ai").then(|| cfg.ai_url.clone()))?;
     let model = cfg.embedding_model.clone();
     let http = reqwest::Client::builder()
         .timeout(Duration::from_secs(60))
@@ -302,6 +315,95 @@ pub fn complete_json_value(value: &Value) -> Result<Map<String, Value>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::WorkerConfig;
+
+    fn test_cfg(provider: &str) -> WorkerConfig {
+        WorkerConfig {
+            nats_url: "nats://localhost:4222".into(),
+            events_prefix: "sre.events".into(),
+            run_request: "sre.run.request".into(),
+            hitl_prefix: "sre.hitl.review".into(),
+            ctrl_prefix: "sre.graph.control".into(),
+            llm_provider: provider.into(),
+            openai_api_key: None,
+            openai_model: "gpt-4o".into(),
+            openai_base_url: "https://api.openai.com/v1".into(),
+            anthropic_api_key: None,
+            anthropic_model: "claude-sonnet".into(),
+            candle_url: "http://localhost:11434".into(),
+            candle_model: "Qwen/Qwen2.5-3B-Instruct".into(),
+            ai_url: "http://localhost:8002/v1".into(),
+            ai_model: "local/Qwen/Qwen2.5-3B-Instruct".into(),
+            embedding_url: None,
+            embedding_model: "text-embedding-3-small".into(),
+            qdrant_url: "http://localhost:6333".into(),
+            qdrant_memory_collection: "sre_memory".into(),
+            qdrant_snapshot_collection: "sre_snapshots".into(),
+            docker_sandbox_image: "auto-sre/sandbox:dev".into(),
+            sandbox_pool_min: 3,
+            sandbox_pool_max: 5,
+            sandbox_cpu_quota: 1.5,
+            sandbox_mem_limit: 512,
+            sandbox_network_mode: "none".into(),
+            sandbox_workdir: "/workspace".into(),
+            graph_max_verifier_attempts: 3,
+            graph_hitl_auto_approve: true,
+            graph_hitl_timeout_seconds: 0,
+            deploy_webhook_url: None,
+            hitl_wait_timeout: Duration::from_secs(0),
+            shutdown_grace: Duration::from_secs(10),
+        }
+    }
+
+    #[test]
+    fn ai_provider_embeddings_fall_back_to_the_ai_gateway() {
+        let cfg = test_cfg("ai");
+        assert!(build_embedding_fn(&cfg).is_some());
+    }
+
+    #[test]
+    fn local_provider_embeddings_require_an_explicit_url() {
+        let cfg = test_cfg("local");
+        assert!(build_embedding_fn(&cfg).is_none());
+    }
+
+    #[tokio::test]
+    async fn ai_provider_calls_the_ai_gateway_chat_endpoint() {
+        use std::io::{Read, Write};
+        use std::sync::{Arc, Mutex};
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let request_line = Arc::new(Mutex::new(String::new()));
+        let captured = Arc::clone(&request_line);
+
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 8192];
+            let n = stream.read(&mut buf).unwrap();
+            let head = String::from_utf8_lossy(&buf[..n]);
+            *captured.lock().unwrap() = head.lines().next().unwrap_or_default().to_string();
+            let body = concat!(
+                r#"{"choices":[{"message":{"content":"{\"plan\":[]}"}}],"#,
+                r#""usage":{"prompt_tokens":1,"completion_tokens":1}}"#
+            );
+            let resp = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            stream.write_all(resp.as_bytes()).unwrap();
+        });
+
+        let mut cfg = test_cfg("ai");
+        cfg.ai_url = format!("http://{addr}/v1");
+        let boxed = build_router(&cfg);
+        let out = boxed.complete("system", "user").await.expect("completion should succeed");
+        assert!(out.text.contains("plan"));
+        assert_eq!(out.input_tokens, 1);
+
+        let line = request_line.lock().unwrap().clone();
+        assert!(line.starts_with("POST /v1/chat/completions"), "got {line}");
+    }
 
     #[test]
     fn extracts_json_from_fenced_response() {

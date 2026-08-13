@@ -90,6 +90,13 @@ docker compose --profile llm-routing up -d  # LiteLLM proxy on :4000
 docker compose --profile gpu-llm up -d      # vLLM :8001 + Ray Serve :8265
 ```
 
+The worker reasons through the AI gateway when `LLM_PROVIDER=ai`: every
+agent LLM call goes to `AI_URL` (`:8002`, LiteLLM routing + structured
+calling), agent retrieval uses the gateway's hybrid RAG (`/v1/rag/search`,
+Qdrant + LanceDB + PageIndex with RRF), and embeddings fall back to the
+gateway's `/v1/embeddings`. The default `LLM_PROVIDER=local` uses Candle
+directly; `openai`/`anthropic` are available with their API keys.
+
 - Command center (React) → http://localhost:3000 (docker compose) or :5173 (vite dev)
 - HTMX dashboard (Templ) → http://localhost:8000
 - API + WebSocket + SSE → http://localhost:8000
