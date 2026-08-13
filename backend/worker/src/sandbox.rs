@@ -221,14 +221,8 @@ impl SandboxHandle {
 
     /// Write a file into the sandbox via `sh -c` heredoc over docker exec.
     pub async fn write_file(&self, path: &str, content: &str) -> Result<()> {
-        let dir = path.rsplit_once('/').map(|(d, _)| d).unwrap_or(".");
-        let script = format!(
-            "mkdir -p {dir:?} && cat > {path:?}",
-            dir = shell_quote(dir),
-            path = shell_quote(path)
-        );
         self.exec(
-            &script,
+            &write_script(path),
             Some(content.as_bytes().to_vec()),
             Duration::from_secs(30),
         )
@@ -239,7 +233,7 @@ impl SandboxHandle {
     pub async fn read_file(&self, path: &str) -> Result<String> {
         let result = self
             .exec(
-                &format!("cat {path:?}", path = shell_quote(path)),
+                &format!("cat {}", shell_quote(path)),
                 None,
                 Duration::from_secs(30),
             )
@@ -356,6 +350,18 @@ fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 
+/// Build the shell script that writes a file into the sandbox. The path is
+/// shell-quoted once; the file must land under its real name (a double-quote
+/// wrap would leave literal quotes in the filename — a real bug we hit).
+fn write_script(path: &str) -> String {
+    let dir = path.rsplit_once('/').map(|(d, _)| d).unwrap_or(".");
+    format!(
+        "mkdir -p {} && cat > {}",
+        shell_quote(dir),
+        shell_quote(path)
+    )
+}
+
 pub fn parse_failures(pytest_output: &str) -> Vec<String> {
     let mut lines = Vec::new();
     for line in pytest_output.lines() {
@@ -375,6 +381,14 @@ pub fn linter_unavailable(exit_code: i64, output: &str) -> bool {
     exit_code == 127 || (exit_code != 0 && output.contains("command not found"))
 }
 
+/// pytest exits 5 when zero tests are collected ("no tests ran in 0.00s").
+/// A workspace without a test suite is not a patch failure — treat it as a
+/// non-run. Real failures (assertions, errors, collection errors) still fail.
+pub fn no_tests_collected(pytest_output: &str) -> bool {
+    let out = pytest_output.to_lowercase();
+    out.contains("no tests ran") && !out.contains("failed") && !out.contains("error")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -390,5 +404,21 @@ mod tests {
     #[test]
     fn quotes_shell_paths() {
         assert_eq!(shell_quote("/workspace/app.py"), "'/workspace/app.py'");
+    }
+
+    #[test]
+    fn write_script_writes_to_the_real_filename() {
+        let script = write_script("app.py");
+        assert_eq!(script, "mkdir -p '.' && cat > 'app.py'");
+        // The bug that shipped literal quotes into the filename:
+        assert!(!script.contains("\"'app.py'\""));
+        assert_eq!(write_script("src/main.rs"), "mkdir -p 'src' && cat > 'src/main.rs'");
+    }
+
+    #[test]
+    fn tolerates_missing_test_suite_but_not_failures() {
+        assert!(no_tests_collected("no tests ran in 0.00s"));
+        assert!(!no_tests_collected("2 failed, 1 passed in 0.1s"));
+        assert!(!no_tests_collected("no tests ran\nERROR: collection failed"));
     }
 }

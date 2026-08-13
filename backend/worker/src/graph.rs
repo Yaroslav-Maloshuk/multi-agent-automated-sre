@@ -145,6 +145,18 @@ async fn finalize(ctx: &AgentContext, state: AgentState) -> AgentState {
         }
         _ => {}
     }
+    let final_summary = match state.status {
+        GraphStatus::Completed => "graph completed".to_string(),
+        GraphStatus::Failed => format!(
+            "graph failed: {}",
+            state.error.clone().unwrap_or_default()
+        ),
+        GraphStatus::Interrupted => "graph interrupted".to_string(),
+        _ => "graph finished".to_string(),
+    };
+    // Persist the terminal state as a snapshot so the gateway's absorbed state
+    // reflects the final status (previous snapshots predate the transition).
+    emit_memory_snapshot(ctx, &state, "finalize", &final_summary).await;
     emit_payload(
         ctx,
         EVENT_GRAPH_STATUS_CHANGED,
@@ -228,12 +240,20 @@ async fn schedule(ctx: AgentContext, token: CancellationToken, initial: AgentSta
 
         if frontier.contains(&AgentName::Verifier) && state.status == GraphStatus::Running {
             if let Some(verification) = &state.verification {
-                if !verification.ok && state.verifier_attempt < ctx.cfg.graph_max_verifier_attempts
-                {
-                    pending.push_front(AgentName::CodeFixer);
-                    completed.remove(&AgentName::CodeFixer);
-                    completed.remove(&AgentName::Verifier);
-                    reverify = true;
+                if !verification.ok {
+                    if state.verifier_attempt < ctx.cfg.graph_max_verifier_attempts {
+                        pending.push_front(AgentName::CodeFixer);
+                        completed.remove(&AgentName::CodeFixer);
+                        completed.remove(&AgentName::Verifier);
+                        reverify = true;
+                    } else {
+                        state = state
+                            .with_error(format!(
+                                "verification failed after {} attempt(s)",
+                                state.verifier_attempt
+                            ))
+                            .finish(GraphStatus::Failed);
+                    }
                 }
             }
         } else if reverify && frontier.contains(&AgentName::CodeFixer) {

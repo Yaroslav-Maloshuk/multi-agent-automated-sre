@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use serde_json::{json, Map};
 
 use crate::context::{AgentContext, EVENT_SANDBOX_ACQUIRED, EVENT_SANDBOX_RELEASED};
-use crate::sandbox::{linter_unavailable, parse_failures};
+use crate::sandbox::{linter_unavailable, no_tests_collected, parse_failures};
 use crate::state::{AgentState, VerificationReport};
 
 pub async fn run(ctx: &AgentContext, state: AgentState) -> Result<AgentState> {
@@ -68,7 +68,10 @@ pub async fn run(ctx: &AgentContext, state: AgentState) -> Result<AgentState> {
         }
     }
 
-    let tests_passed = test_result.as_ref().map(|r| r.ok).unwrap_or(false);
+    let tests_passed = match &test_result {
+        Ok(r) => r.ok || no_tests_collected(&format!("{}{}", r.stdout, r.stderr)),
+        Err(_) => false,
+    };
     let raw_output = match &test_result {
         Ok(r) => format!("{}{}", r.stdout, r.stderr),
         Err(err) => format!("[pytest exec error] {err}"),
