@@ -52,6 +52,8 @@ check "rag index" '"pages"' \
   "$(json "${AI_URL}/v1/rag/index" -d '{}')"
 check "rag search" '"hits"' \
   "$(json "${AI_URL}/v1/rag/search" -d '{"query":"no space left on device","top_k":3}')"
+check "rag documents" '"indexed_stores"' \
+  "$(json "${AI_URL}/v1/rag/documents" -d '{"id":"smoke_doc","text":"RESOLVED INCIDENT: disk full on node-1; root cause: log rotation; fix: cleanup","metadata":{"kind":"postmortem"}}')"
 check "analytics" '"retrieval_recall"' "$(curl -s -m 5 "${AI_URL}/v1/analytics")"
 check "eval" '"faithfulness"' \
   "$(json "${AI_URL}/v1/eval" -d '{"questions":["disk full?"],"answers":["clean /var/log"],"contexts":[["clean /var/log"]],"ground_truths":[["clean /var/log"]]}')"
