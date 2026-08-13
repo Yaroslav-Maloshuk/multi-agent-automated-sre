@@ -1,6 +1,0 @@
-# Optional deps for the local HuggingFace LLM provider
-# (app/llm/providers/local.py). NOT part of the base image so the Docker
-# stack stays lean; install into your local venv with `make local-deps`.
-torch>=2.3.0
-transformers>=4.45.0
-accelerate>=0.30.0
