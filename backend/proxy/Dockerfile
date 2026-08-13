@@ -12,7 +12,8 @@ RUN mkdir src && printf 'fn main() {}\n' > src/main.rs \
     && cargo build --release --bin auto-sre-proxy \
     && rm -rf src
 COPY backend/proxy/src ./src
-RUN cargo build --release --bin auto-sre-proxy && mv target/release/auto-sre-proxy /out-proxy
+RUN find src -type f -exec touch {} + \
+    && cargo build --release --bin auto-sre-proxy && mv target/release/auto-sre-proxy /out-proxy
 
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates

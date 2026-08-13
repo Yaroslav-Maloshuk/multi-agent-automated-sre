@@ -10,7 +10,7 @@ ENV PYTHONUNBUFFERED=1 UV_COMPILE_BYTECODE=1
 COPY --from=ghcr.io/astral-sh/uv:0.5 /uv /uvx /bin/
 
 WORKDIR /app
-COPY ai/pyproject.toml ai/.python-version ai/README.md ./
+COPY ai/pyproject.toml ai/uv.lock ai/.python-version ai/README.md ./
 COPY ai/src ./src
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev
 

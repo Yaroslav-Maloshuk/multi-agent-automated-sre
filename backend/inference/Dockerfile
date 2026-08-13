@@ -2,7 +2,7 @@
 # Python-free local LLM inference — Candle/Qwen2 CPU serving an OpenAI
 # compatible API. Heavy build (candle + tokenizers), tiny runtime.
 # ─────────────────────────────────────────────────────────────────────────
-FROM rust:1.85 AS build
+FROM rust:1.97 AS build
 WORKDIR /src
 COPY backend/inference/Cargo.toml backend/inference/Cargo.lock ./
 RUN mkdir src && printf 'fn main() {}\n' > src/main.rs \
@@ -10,7 +10,8 @@ RUN mkdir src && printf 'fn main() {}\n' > src/main.rs \
     && cargo build --release --bin auto-sre-inference \
     && rm -rf src
 COPY backend/inference/src ./src
-RUN cargo build --release --bin auto-sre-inference && mv target/release/auto-sre-inference /out-inference
+RUN find src -type f -exec touch {} + \
+    && cargo build --release --bin auto-sre-inference && mv target/release/auto-sre-inference /out-inference
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
