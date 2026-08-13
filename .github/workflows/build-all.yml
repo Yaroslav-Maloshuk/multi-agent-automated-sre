@@ -61,7 +61,7 @@ jobs:
 
       - name: Build desktop app
         working-directory: desktop
-        run: wails build
+        run: wails build ${{ runner.os == 'Linux' && '-tags webkit2_41' || '' }}
 
       - name: Upload binary
         uses: actions/upload-artifact@v7

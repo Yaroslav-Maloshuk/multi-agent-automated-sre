@@ -15,7 +15,7 @@ Beyond listing incidents it is a live operator console:
 
 ## Prerequisites
 
-- Go 1.22+
+- Go 1.23+
 - Node.js 18+
 - Wails CLI: `go install github.com/wailsapp/wails/v2/cmd/wails@v2.9.2`
 
