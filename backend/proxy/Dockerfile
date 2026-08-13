@@ -4,7 +4,7 @@
 # Build context is the repo root (same as worker/Dockerfile).
 # ─────────────────────────────────────────────────────────────────────────
 FROM rust:1.97-alpine AS build
-RUN apk add --no-cache cmake clang musl-dev perl openssl-dev
+RUN apk add --no-cache build-base cmake clang perl openssl-dev
 WORKDIR /src
 COPY backend/proxy/Cargo.toml backend/proxy/Cargo.lock ./
 RUN mkdir src && printf 'fn main() {}\n' > src/main.rs \
