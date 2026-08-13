@@ -1,0 +1,109 @@
+name: Build all platforms
+
+# Verifies the desktop (Wails) app compiles into a native binary on every
+# major OS and that the React Native (Expo) app bundles for iOS and Android.
+# Native mobile binaries need cloud (EAS Build) or local SDKs/Apple account;
+# this job validates the JS bundles Metro produces for both targets.
+#
+# Runs on `main` push, pull requests, and manual dispatch.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-all-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  desktop:
+    name: Desktop (Wails) · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: desktop/go.mod
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: desktop/frontend/package-lock.json
+
+      - name: Install Linux system deps (GTK + webkit2gtk)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: Add MinGW to PATH (Windows)
+        if: runner.os == 'Windows'
+        run: echo "C:\Program Files\Git\mingw64\bin" >> "$GITHUB_PATH"
+
+      - name: Build embedded frontend
+        working-directory: desktop/frontend
+        run: npm ci && npm run build
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.9.2
+
+      - name: Build desktop app
+        working-directory: desktop
+        run: wails build
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: auto-sre-desktop-${{ matrix.os }}
+          path: desktop/build/bin/
+          if-no-files-found: error
+
+  mobile:
+    name: Mobile (Expo) · bundle ios + android
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Expo doctor
+        run: npx expo-doctor
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Bundle iOS
+        run: npx expo export --platform ios --output-dir dist/ios
+
+      - name: Bundle Android
+        run: npx expo export --platform android --output-dir dist/android
+
+      - name: Upload bundles
+        uses: actions/upload-artifact@v7
+        with:
+          name: mobile-bundles
+          path: mobile/dist
+          if-no-files-found: error
