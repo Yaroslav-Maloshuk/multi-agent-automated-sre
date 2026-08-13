@@ -14,7 +14,7 @@ body {
 }
 
 .app {
-  max-width: 900px;
+  max-width: 1240px;
   margin: 0 auto;
   padding: 24px;
 }
@@ -149,4 +149,158 @@ tbody tr:hover {
 .badge-low {
   background: #16351f;
   color: #4ade80;
+}
+
+.create {
+  background: #161a22;
+  border: 1px solid #232833;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.create h2,
+.panel h2 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #9aa3b2;
+  margin: 0 0 12px;
+}
+
+.create-row {
+  display: flex;
+  gap: 8px;
+}
+
+.create-row input {
+  flex: 1;
+  background: #0f1115;
+  border: 1px solid #232833;
+  border-radius: 6px;
+  color: #e6e6e6;
+  padding: 9px 12px;
+  font-size: 13px;
+}
+
+.create-row input::placeholder {
+  color: #5c6470;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) 2fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.panel {
+  background: #161a22;
+  border: 1px solid #232833;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.panel .dim {
+  color: #5c6470;
+}
+
+.panel h2 .mono {
+  font-weight: 400;
+  font-size: 12px;
+  margin-left: 8px;
+}
+
+tbody tr {
+  cursor: pointer;
+}
+
+tbody tr.selected {
+  background: #1c3a5f;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.actions button {
+  background: #232833;
+  color: #e6e6e6;
+  border: 1px solid #2c3340;
+  border-radius: 6px;
+  padding: 8px 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.actions button.primary {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #ffffff;
+}
+
+.actions button.danger {
+  background: #7f1d1d;
+  border-color: #7f1d1d;
+  color: #ffffff;
+}
+
+.actions button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.detail h3 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #9aa3b2;
+  margin: 12px 0 6px;
+}
+
+.detail pre,
+.stream-line pre {
+  margin: 0;
+  background: #0f1115;
+  border: 1px solid #232833;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-x: auto;
+  color: #c9cdd6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.stream {
+  margin-bottom: 16px;
+}
+
+.stream-body {
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.stream-line {
+  display: grid;
+  grid-template-columns: 90px 180px 1fr;
+  gap: 8px;
+  align-items: baseline;
+  padding: 6px 0;
+  border-bottom: 1px solid #1c212d;
+}
+
+.stream-line .dim {
+  color: #5c6470;
+  font-size: 12px;
+}
+
+.stream-line pre {
+  border: none;
+  background: transparent;
+  padding: 0;
 }

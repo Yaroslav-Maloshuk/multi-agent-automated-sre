@@ -2,6 +2,17 @@
 
 Expo (SDK 53, TypeScript) mobile client for the multi-agent-automated-sre gateway.
 
+It is an operator console on the go:
+
+- **Live event stream** — streams `/ws/stream?channels=*` with auto-reconnect
+  and exponential backoff; the incident list auto-refreshes when the stream
+  reports activity.
+- **Create incident** — POST `/api/v1/incidents` from the device.
+- **Run the agent graph** — POST `/api/v1/incidents/{id}/run`.
+- **HITL review** — approve / reject via `/api/v1/incidents/{id}/review`.
+- **Interrupt** — stop a run via `/api/v1/incidents/{id}/interrupt`.
+- **Incident detail** — live graph state for the selected incident.
+
 ## Run
 
 - npx expo start
@@ -15,5 +26,4 @@ Expo (SDK 53, TypeScript) mobile client for the multi-agent-automated-sre gatewa
 
 ## Notes
 
-- Fetches incidents from GET /api/v1/incidents and streams events from /ws/stream?channels=*.
 - No native build is verified in CI; run locally with Expo Go or a simulator.
