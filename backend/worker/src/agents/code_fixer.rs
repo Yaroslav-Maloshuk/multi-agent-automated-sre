@@ -46,6 +46,30 @@ pub async fn run(ctx: &AgentContext, state: AgentState) -> Result<AgentState> {
         .clone()
         .unwrap_or_else(|| "no previous attempt".to_string());
 
+    let _ = ctx
+        .emit_log(
+            &state,
+            &format!("[code_fixer] retrieving similar past fixes for '{root_cause}'"),
+        )
+        .await;
+    let similar: Vec<String> = ctx
+        .memory
+        .hybrid_search(&root_cause, 3)
+        .await
+        .unwrap_or_default()
+        .iter()
+        .map(|h| h.text.clone())
+        .filter(|t| !t.trim().is_empty())
+        .collect();
+    if !similar.is_empty() {
+        let _ = ctx
+            .emit_log(
+                &state,
+                &format!("[code_fixer] {} similar fix(es) in context", similar.len()),
+            )
+            .await;
+    }
+
     let mut pool = ctx.pool.lock().await;
     let handle = pool.acquire().await.context("acquire sandbox")?;
     drop(pool);
@@ -60,7 +84,12 @@ pub async fn run(ctx: &AgentContext, state: AgentState) -> Result<AgentState> {
     };
 
     let user_prompt = format!(
-        "Root-cause hypothesis: {root_cause}\nVerification feedback: {feedback}\n\nFile: {target_file}\n\n```\n{old_content}\n```\n\nRespond with the COMPLETE rewritten file."
+        "Root-cause hypothesis: {root_cause}\nVerification feedback: {feedback}\n\nSimilar past fixes:\n{}\n\nFile: {target_file}\n\n```\n{old_content}\n```\n\nRespond with the COMPLETE rewritten file.",
+        if similar.is_empty() {
+            "none retrieved".to_string()
+        } else {
+            similar.join("\n---\n")
+        }
     );
 
     let (new_content, state) = match ctx.complete(&state, SYSTEM_PROMPT, &user_prompt).await {

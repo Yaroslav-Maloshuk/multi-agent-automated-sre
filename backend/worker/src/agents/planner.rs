@@ -22,11 +22,51 @@ pub async fn run(ctx: &AgentContext, state: AgentState) -> Result<AgentState> {
         .emit_log(&state, &format!("[planner] decomposing alert '{title}'"))
         .await;
 
-    let incident_json = Value::Object(state.incident.clone());
-    let plan = match ctx
-        .complete_json(&state, SYSTEM_PROMPT, &incident_json.to_string())
+    let query = format!(
+        "{title} {}",
+        state
+            .incident
+            .get("message")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+    );
+    let _ = ctx
+        .emit_log(
+            &state,
+            &format!("[planner] retrieving similar past incidents for '{query}'"),
+        )
+        .await;
+    let history: Vec<String> = ctx
+        .memory
+        .hybrid_search(&query, 3)
         .await
-    {
+        .unwrap_or_default()
+        .iter()
+        .map(|h| h.text.clone())
+        .filter(|t| !t.trim().is_empty())
+        .collect();
+    if !history.is_empty() {
+        let _ = ctx
+            .emit_log(
+                &state,
+                &format!(
+                    "[planner] {} past incident(s) in planning context",
+                    history.len()
+                ),
+            )
+            .await;
+    }
+
+    let prompt = format!(
+        "Incident:\n{}\n\nRelevant past incidents / runbooks:\n{}\n\nProduce the JSON plan only.",
+        serde_json::to_string_pretty(&state.incident).unwrap_or_default(),
+        if history.is_empty() {
+            "none retrieved".to_string()
+        } else {
+            history.join("\n---\n")
+        }
+    );
+    let plan = match ctx.complete_json(&state, SYSTEM_PROMPT, &prompt).await {
         Ok((data, next)) => {
             let raw = data.get("subtasks").cloned().unwrap_or(Value::Null);
             let subtasks = materialize(&state.incident, Some(&raw));
