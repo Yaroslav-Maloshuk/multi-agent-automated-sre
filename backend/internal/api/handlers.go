@@ -58,6 +58,11 @@ func (a *App) handleCreateIncident(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, "validation_error", "invalid JSON body")
 		return
 	}
+	title, _ := payload["title"].(string)
+	if title == "" {
+		writeError(w, http.StatusBadRequest, "validation_error", "incident requires a non-empty title")
+		return
+	}
 	incidentID := "inc_" + envelope.RandomHex(16)
 	payload["id"] = incidentID
 	payload["created_at"] = nowISO()
@@ -220,6 +225,7 @@ func (a *App) handleReviewIncident(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) handleInterruptIncident(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("incident_id")
+	a.MarkInterrupted(id)
 	_ = a.Bus.PublishControl(id, envelope.ControlMessage{Action: "interrupt"})
 	writeJSON(w, http.StatusOK, map[string]any{
 		"incident_id": id,

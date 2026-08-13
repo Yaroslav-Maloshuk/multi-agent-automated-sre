@@ -127,6 +127,12 @@ func (a *App) MarkRunning(incidentID string) {
 	a.mu.Unlock()
 }
 
+func (a *App) MarkInterrupted(incidentID string) {
+	a.mu.Lock()
+	delete(a.running, incidentID)
+	a.mu.Unlock()
+}
+
 func (a *App) LiveStatus(ctx context.Context, incidentID string) string {
 	st, err := a.Store.GetState(ctx, incidentID)
 	if err != nil || st == nil {
