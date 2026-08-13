@@ -13,7 +13,7 @@
 # Optional profiles:
 #   --profile local-llm    Candle (Rust, Python-free) OpenAI-compatible endpoint
 #   --profile llm-routing  LiteLLM proxy on :4000 in front of every provider
-#   --profile gpu-llm      vLLM (:8001) + Ray Serve dashboard (:8265)
+#   --profile gpu-llm      vLLM (:8001) + Ray Serve serving the model (:8002) + Ray dashboard (:8265)
 # ─────────────────────────────────────────────────────────────────────────
 
 name: auto-sre
@@ -212,13 +212,32 @@ services:
               capabilities: [gpu]
 
   ray:
-    image: rayproject/ray:latest-py312
+    build:
+      context: .
+      dockerfile: ai/ray.Dockerfile
     container_name: auto-sre-ray
     profiles: ["gpu-llm"]
-    command: ["ray", "start", "--head", "--port", "6379", "--dashboard-host", "0.0.0.0"]
+    environment:
+      HF_MODEL_ID: ${HF_MODEL_ID:-Qwen/Qwen2.5-1.5B-Instruct}
+      RAY_TENSOR_PARALLEL: ${RAY_TENSOR_PARALLEL:-1}
+    volumes:
+      - ${HOME}/.cache/huggingface:/home/ray/.cache/huggingface
     ports:
+      - "8002:8001"
       - "8265:8265"
-      - "10001:10001"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8001/v1/models', timeout=5)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 120s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
 
   # ── Pingora edge ────────────────────────────────────────────────────────
   proxy:

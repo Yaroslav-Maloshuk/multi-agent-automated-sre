@@ -55,7 +55,7 @@ events). `POST /api/v1/incidents` remains the generic programmatic entry point.
 | Background Execution | NATS JetStream — work-queue dispatch to a Rust worker pool via subject queues |
 | Real-time Fabric | NATS → WebSocket + SSE fan-out (zero polling) |
 | LLM Routing | LiteLLM — one OpenAI-compatible surface over OpenAI / Anthropic / vLLM / Ray Serve / Candle |
-| LLM Serving | Candle (Rust-native), vLLM + Ray Serve (optional GPU profile), sentence-transformers embeddings |
+| LLM Serving | Candle (Rust-native), vLLM + Ray Serve LLM (vLLM engine behind Ray Serve, optional GPU profile), sentence-transformers embeddings |
 | Structured Calling | Instructor + Outlines + DSPy (constrained JSON, pydantic fallback) |
 | RAG | Qdrant (semantic) + LanceDB (vector table) + SQLite PageIndex (vectorless), RRF fusion, Chonkie chunking |
 | ETL / Analytics | Crawl4AI ingestion → Chonkie → embed → index; DuckDB columnar warehouse |
@@ -87,7 +87,7 @@ Optional LLM tiers (profiles):
 ```bash
 docker compose --profile local-llm up -d    # Candle inference on :11434
 docker compose --profile llm-routing up -d  # LiteLLM proxy on :4000
-docker compose --profile gpu-llm up -d      # vLLM :8001 + Ray Serve :8265
+docker compose --profile gpu-llm up -d      # vLLM :8001 + Ray Serve (vLLM engine, OpenAI API) :8002 + Ray dashboard :8265
 ```
 
 The worker reasons through the AI gateway when `LLM_PROVIDER=ai`: every
