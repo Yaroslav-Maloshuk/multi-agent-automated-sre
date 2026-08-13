@@ -31,6 +31,32 @@ def test_chat_completion():
     assert body["choices"][0]["message"]["content"].startswith("{")
 
 
+def test_deterministic_provider_matches_worker_prompts():
+    """The fallback provider keys on substrings from the Rust worker's actual
+    prompts (not agent names). code_fixer must yield valid Python."""
+    def complete(content: str) -> str:
+        resp = client.post(
+            "/v1/chat/completions",
+            json={"model": "local/test", "messages": [{"role": "user", "content": content}]},
+        )
+        assert resp.status_code == 200
+        return resp.json()["choices"][0]["message"]["content"]
+
+    planner = complete("You are a senior SRE planner. produce a JSON plan.")
+    assert '"plan"' in planner
+
+    log_analyzer = complete(
+        'You are an expert SRE log analyst. Incident: {"title":"x"}\n'
+        'Respond with the root cause JSON only.'
+    )
+    assert '"hypothesis"' in log_analyzer
+
+    code_fixer = complete(
+        'Root-cause hypothesis: timeout\nRespond with the COMPLETE new file contents only.'
+    )
+    assert "def checkout" in code_fixer
+
+
 def test_chat_stream_is_sse():
     with client.stream(
         "POST",

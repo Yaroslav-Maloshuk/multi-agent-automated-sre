@@ -23,7 +23,7 @@ from fastapi import APIRouter, BackgroundTasks, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from .etl import ETLResult, Warehouse
+from .etl import ETLResult, Warehouse, index_text_doc
 from .etl import run as run_etl
 from .rag import PageIndex
 from .routing import available_providers, complete, embed, stream
@@ -56,6 +56,12 @@ class SearchRequest(BaseModel):
 
 class IndexRequest(BaseModel):
     urls: list[str] = Field(default_factory=list)
+
+
+class DocumentRequest(BaseModel):
+    id: str
+    text: str
+    metadata: dict = Field(default_factory=dict)
 
 
 class EvalRequest(BaseModel):
@@ -143,6 +149,31 @@ async def rag_index(req: IndexRequest) -> dict[str, ETLResult | int]:
     index = _get_index()
     result = await run_etl(urls=req.urls or None, page_index=index, warehouse=_get_warehouse())
     return {"result": result, "pages": len(index)}
+
+
+@router.post("/v1/rag/documents")
+async def rag_documents(req: DocumentRequest) -> dict[str, Any]:
+    """Ingest a raw text document (postmortem / runbook / note) into the hybrid
+    RAG stores so agent retrieval can surface it. Returns per-doc stats."""
+    from .config import get_settings
+
+    s = get_settings()
+    result = await index_text_doc(
+        req.id,
+        req.text,
+        metadata=req.metadata,
+        page_index=_get_index(),
+        warehouse=_get_warehouse(),
+        qdrant_url=s.qdrant_url,
+        qdrant_collection=s.qdrant_collection,
+        lancedb_path=s.lancedb_path,
+    )
+    return {
+        "id": req.id,
+        "chunks": result.chunks,
+        "tokens": result.tokens,
+        "indexed_stores": result.indexed_stores,
+    }
 
 
 @router.get("/v1/analytics")

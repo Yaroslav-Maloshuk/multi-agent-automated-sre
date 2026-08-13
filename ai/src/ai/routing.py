@@ -43,25 +43,39 @@ class _LocalProvider:
     """Deterministic, dependency-free LLM used for tests and offline runs."""
 
     def __init__(self) -> None:
+        # `_answers` keeps a canonical name per agent (tests reset the dict).
+        # `_triggers` are substrings that appear in the *actual* prompts that
+        # reach this provider — the Rust worker never sends agent names, so we
+        # key on the agent system-prompt wording plus the legacy names.
         self._answers = {
             "planner": (
                 '{"plan":["parse logs","reproduce bug","patch code","verify","deploy"],'
                 '"owner":"planner"}'
             ),
             "log_analyzer": (
-                '{"root_cause":"no space left on device","confidence":0.93,'
-                '"evidence":["df -h"],"fixes":["cleanup"]}'
+                '{"hypothesis":"no space left on device","root_cause":"no space left on device",'
+                '"confidence":0.93,"evidence":["df -h"],"fixes":["cleanup"]}'
             ),
             "code_fixer": (
-                '{"patch":"--- a/app.py\\n+++ b/app.py\\n-  max(1, 0)\\n+  max(1, 1)",'
-                '"summary":"guard divide by zero"}'
+                'def checkout(order):\n'
+                '    resp = safe_request("/charge", order)\n'
+                '    return resp\n'
+                '\n'
+                'def safe_request(path, payload, timeout=5):\n'
+                '    import requests\n'
+                '    return requests.post(path, json=payload, timeout=timeout)\n'
             ),
+        }
+        self._triggers = {
+            "planner": ["senior sre planner", "planner"],
+            "log_analyzer": ["expert sre log analyst", "log_analyzer"],
+            "code_fixer": ["complete new file", "code_fixer"],
         }
 
     async def complete(self, messages: list[dict[str, Any]]) -> str:
         blob = json.dumps(messages).lower()
-        for key, answer in self._answers.items():
-            if key in blob:
+        for name, answer in self._answers.items():
+            if any(t in blob for t in self._triggers[name]):
                 return answer
         return '{"ok":true,"note":"local deterministic provider"}'
 

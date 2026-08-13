@@ -76,30 +76,84 @@ async def run(
     )
 
 
+async def index_text_doc(
+    doc_id: str,
+    text: str,
+    *,
+    metadata: dict | None = None,
+    page_index: PageIndex | None = None,
+    warehouse: Warehouse | None = None,
+    qdrant_url: str | None = None,
+    qdrant_collection: str | None = None,
+    lancedb_path: str | None = None,
+    chunk_size: int = 512,
+) -> ETLResult:
+    """Ingest one raw text document (postmortem, runbook, note) into every
+    reachable store so hybrid retrieval sees it. Returns per-doc stats."""
+    chunks = chunk(text, max_tokens=chunk_size, source=doc_id)
+    total_tokens = sum(c.token_count for c in chunks)
+    indexed_stores: list[str] = []
+
+    if page_index is not None:
+        page_index.add(doc_id, chunks)
+        indexed_stores.append("pageindex")
+
+    if warehouse is not None:
+        warehouse.record_doc(doc_id, doc_id, doc_id)
+        for c in chunks:
+            warehouse.record_chunk(doc_id, c.index, c.token_count, c.text)
+
+    if lancedb_path or qdrant_collection:
+        vectors = await embed([c.text for c in chunks])
+        if qdrant_collection and qdrant_url:
+            _index_qdrant(qdrant_url, qdrant_collection, chunks, vectors, doc_id, metadata)
+            indexed_stores.append("qdrant")
+        if lancedb_path:
+            _index_lance(lancedb_path, chunks, vectors, doc_id)
+            indexed_stores.append("lancedb")
+
+    return ETLResult(
+        docs=1,
+        chunks=len(chunks),
+        tokens=total_tokens,
+        indexed_stores=sorted(set(indexed_stores)),
+    )
+
+
 async def _crawl(url: str, *, max_pages: int) -> list[CrawledDoc]:
     from .crawl import crawl
 
     return await crawl(url, max_pages=max_pages)
 
 
-def _index_qdrant(collection: str, chunks: list, vectors: list[list[float]], doc_id: str) -> None:
+def _index_qdrant(
+    qdrant_url: str,
+    collection: str,
+    chunks: list,
+    vectors: list[list[float]],
+    doc_id: str,
+    metadata: dict | None = None,
+) -> None:
     try:
         from qdrant_client import QdrantClient
         from qdrant_client.models import Distance, PointStruct, VectorParams
 
-        client = QdrantClient(url="http://localhost:6333", timeout=1.0)
+        client = QdrantClient(url=qdrant_url, timeout=1.0)
         if collection not in {c.name for c in client.get_collections().collections}:
             client.create_collection(
                 collection,
                 vectors_config=VectorParams(size=len(vectors[0]), distance=Distance.COSINE),
             )
+        payload_base = {"text": "", "doc_id": doc_id}
+        if metadata:
+            payload_base.update(metadata)
         client.upsert(
             collection_name=collection,
             points=[
                 PointStruct(
                     id=i,
                     vector=vec,
-                    payload={"text": c.text, "doc_id": doc_id, "index": c.index},
+                    payload={**payload_base, "text": c.text, "index": c.index},
                 )
                 for i, (c, vec) in enumerate(zip(chunks, vectors, strict=True))
             ],

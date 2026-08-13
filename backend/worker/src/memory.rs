@@ -363,7 +363,26 @@ impl Memory for GatewayMemory {
         text: &str,
         metadata: Map<String, Value>,
     ) -> Result<()> {
-        self.qdrant.index_document(doc_id, text, metadata).await
+        // Push the document into the AI gateway's hybrid RAG (PageIndex +
+        // Qdrant + LanceDB) — the store the agents actually query — and
+        // mirror it into the worker's Qdrant as a best-effort side copy.
+        let resp = self
+            .http
+            .post(format!("{}/rag/documents", self.base))
+            .json(&json!({"id": doc_id, "text": text, "metadata": metadata}))
+            .send()
+            .await;
+        match resp {
+            Ok(r) if r.status().is_success() => {}
+            Ok(r) => {
+                tracing::warn!(status = %r.status(), "gateway rag/documents rejected postmortem");
+            }
+            Err(err) => {
+                tracing::warn!(%err, "gateway rag/documents unreachable; postmortem not indexed");
+            }
+        }
+        let _ = self.qdrant.index_document(doc_id, text, metadata).await;
+        Ok(())
     }
 
     async fn snapshot(
