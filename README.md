@@ -10,9 +10,13 @@ production logs via a stateful **async multi-agent graph**, reproduces bugs in
 
 This is **not** a chatbot wrapper. It is a reactive execution engine compiled
 to near-zero-overhead binaries: a **Go gateway**, **Rust/Tokio agent
-orchestration**, **Python-free Candle inference**, and a **NATS** fabric where
-every sub-step, token deduction and terminal byte streams to a React command
-center over WebSockets in real time.
+orchestration**, a **Python/FastAPI AI gateway** (LiteLLM routing, structured
+calling, hybrid RAG, ETL, RAGAS evals), **Rust-native Candle inference**,
+vLLM/Ray Serve as optional serving tiers, a **Pingora edge proxy**, and a
+**NATS** fabric where every sub-step, token deduction and terminal byte
+streams to the React command center — and the Templ+HTMX dashboard, React
+Native mobile app and Wails desktop app — in real time over WebSockets and
+Server-Sent Events.
 
 ```
 ┌────────────┐   alert    ┌──────────────────────────────┐   WS      ┌─────────────────┐
@@ -44,18 +48,26 @@ events). `POST /api/v1/incidents` remains the generic programmatic entry point.
 
 | Layer | Technology |
 |---|---|
-| API Gateway | Go (Goroutines/Channels), typed WebSocket protocol |
+| Edge Proxy | Pingora (Rust, Cloudflare's proxy framework) — path-based routing to gateway / AI / Candle |
+| API Gateway | Go (Goroutines/Channels), typed WebSocket protocol, SSE streaming, Templ+HTMX dashboard |
 | Agent Orchestration | Rust/Tokio async state graph (DAG executor with interrupts) |
-| Background Execution | NATS JetStream — work-queue dispatch to a Rust worker pool via subject queues |
-| Real-time Fabric | NATS → WebSocket fan-out (zero polling) |
 | Isolation | Docker SDK — pre-warmed, network-restricted sandbox pool (`--network none`) |
-| Vector Memory | Qdrant + LanceDB (semantic + lexical, RRF fusion, Arrow-embedded) |
-| LLM Inference | Candle (Rust-native, Python-free) + structured calling (Outlines/DSPy) |
+| Background Execution | NATS JetStream — work-queue dispatch to a Rust worker pool via subject queues |
+| Real-time Fabric | NATS → WebSocket + SSE fan-out (zero polling) |
+| LLM Routing | LiteLLM — one OpenAI-compatible surface over OpenAI / Anthropic / vLLM / Ray Serve / Candle |
+| LLM Serving | Candle (Rust-native), vLLM + Ray Serve (optional GPU profile), sentence-transformers embeddings |
+| Structured Calling | Instructor + Outlines + DSPy (constrained JSON, pydantic fallback) |
+| RAG | Qdrant (semantic) + LanceDB (vector table) + SQLite PageIndex (vectorless), RRF fusion, Chonkie chunking |
+| ETL / Analytics | Crawl4AI ingestion → Chonkie → embed → index; DuckDB columnar warehouse |
+| LLM Evaluation | RAGAS (faithfulness / relevancy / recall), offline lexical fallback |
 | Persistence | Go/SQL + PostgreSQL (durable ROI ledger) |
-| Frontend | React 19 + TypeScript + Tailwind + Recharts + Monaco diff + Xterm |
-| Observability | LangFuse traces + structured JSON logging |
+| Frontend (web) | React 19 + TypeScript + Tailwind + Recharts + Monaco diff + Xterm |
+| Frontend (server) | Templ + HTMX (SSE-driven dashboard at `/`) |
+| Mobile | React Native (Expo, `mobile/`) — WS event stream + incidents |
+| Desktop | Wails v2 (Go + React, `desktop/`) |
+| Observability | Structured JSON logging |
 | CI/CD | GitHub Actions (CI quality gate + Docker build/push to GHCR), Dependabot |
-| Testing | Pytest + RAGAS, K6 load, contract & chaos testing, Ruff, golangci-lint, clippy |
+| Testing | Pytest + Ruff + BDD (behave) + RAGAS, Go tests (-race), Rust clippy/tests, K6 load/contract, chaos soak, Postman collection |
 
 ## Quickstart (one command)
 
@@ -65,12 +77,24 @@ docker compose up --build
 
 This single command brings up the whole stack: NATS (JetStream bus + agent
 work-queue), Valkey (cache), Qdrant (vector search), Postgres (ROI ledger), the
-Go gateway, the Rust worker pool, and the React command center. On first start
-the backend auto-builds the isolated agent sandbox image
-(`auto-sre/sandbox:dev`) via the host Docker daemon.
+Pingora edge proxy, the Go gateway, the Rust worker pool, the Python AI
+gateway, and the React command center. On first start the backend auto-builds
+the isolated agent sandbox image (`auto-sre/sandbox:dev`) via the host Docker
+daemon.
 
-- Command center → http://localhost:3000 (docker compose) or :5173 (vite dev)
-- API + WebSocket → http://localhost:8000
+Optional LLM tiers (profiles):
+
+```bash
+docker compose --profile local-llm up -d    # Candle inference on :11434
+docker compose --profile llm-routing up -d  # LiteLLM proxy on :4000
+docker compose --profile gpu-llm up -d      # vLLM :8001 + Ray Serve :8265
+```
+
+- Command center (React) → http://localhost:3000 (docker compose) or :5173 (vite dev)
+- HTMX dashboard (Templ) → http://localhost:8000
+- API + WebSocket + SSE → http://localhost:8000
+- AI gateway (OpenAI-compatible, RAG, ETL, evals) → http://localhost:8002
+- Edge proxy → http://localhost:8080
 
 Optional env overrides live in `.env` (see `.env.example`); the stack runs
 sane defaults without it.
@@ -81,9 +105,13 @@ Local development (without Docker for the app itself) is still supported:
 cp .env.example .env
 docker compose up -d nats valkey qdrant postgres   # infra only
 make gateway                          # go run ./cmd/gateway on :8000
+make ai                               # uv run uvicorn on :8002
+make proxy                            # cargo run (Pingora) on :8080
 make worker                           # cargo run in backend/worker
 make local-llm                        # optional Candle inference on :11434
 make frontend                         # vite on :5173
+make mobile                           # React Native (Expo)
+make desktop                          # Wails desktop app
 ```
 
 Unit tests need no Docker/NATS/LLM: `make test`.
@@ -110,8 +138,25 @@ Unit tests need no Docker/NATS/LLM: `make test`.
 - `POST /api/v1/collectors/kubernetes` — Kubernetes Event webhook
 - `GET  /api/v1/collectors` — enabled poller status
 - `WS   /ws/stream?channels=...` — bidirectional event channel
+- `SSE  /api/v1/events/stream?channels=...` — same fabric as SSE (HTMX dashboard)
+- `GET  /` — server-rendered Templ + HTMX dashboard
+- `GET  /api/v1/dashboard/incidents` — HTMX-swappable incidents fragment
 
 Full contract in [docs/PROTOCOL.md](docs/PROTOCOL.md).
+
+### AI gateway (`:8002`)
+
+- `GET   /health`, `GET /v1/providers` — routing health + LiteLLM provider list
+- `POST  /v1/chat/completions` — OpenAI-compatible chat (SSE stream when `stream=true`)
+- `POST  /v1/embeddings` — sentence-transformers / provider embeddings
+- `POST  /v1/structured` — Instructor/Outlines/DSPy constrained JSON
+- `POST  /v1/dspy/plan` — DSPy planner module
+- `POST  /v1/rag/index` — ETL: Crawl4AI → Chonkie → embed → index
+- `POST  /v1/rag/search` — hybrid RRF over Qdrant + LanceDB + SQLite PageIndex
+- `GET   /v1/analytics` — DuckDB warehouse: recall, chunk stats, recent retrievals
+- `POST  /v1/eval` — RAGAS metrics (faithfulness / relevancy / recall)
+
+REST/WS collection in [postman/auto-sre.postman_collection.json](postman/auto-sre.postman_collection.json).
 
 ## The kill-features
 

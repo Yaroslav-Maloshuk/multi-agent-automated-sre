@@ -8,15 +8,16 @@ backend/coverage.out
 Cargo.lock.bak
 **/*.rs.bk
 
-# Python (legacy + local dev)
+# Python
+__pycache__/
+*.py[cod]
 .venv/
-legacy/**/__pycache__/
-legacy/**/*.py[cod]
-legacy/**/.venv/
-legacy/**/.pytest_cache/
-legacy/**/.mypy_cache/
-legacy/**/.ruff_cache/
-legacy/**/.coverage
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+ai/var/
 legacy/**/coverage.xml
 legacy/**/db/generated/
 
@@ -24,6 +25,8 @@ legacy/**/db/generated/
 node_modules/
 frontend/dist/
 frontend/.vite/
+mobile/.expo/
+desktop/frontend/dist/
 *.tsbuildinfo
 npm-debug.log*
 

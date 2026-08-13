@@ -48,6 +48,9 @@ build:
 gateway:
 	cd backend && go run ./cmd/gateway
 
+frontend:
+	cd frontend && npm run dev
+
 ai:
 	cd ai && uv run uvicorn ai.main:app --port 8002
 
