@@ -84,7 +84,7 @@
           }
         },
         { "name": "DSPy plan", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{ai}}/v1/dspy/plan", "body": { "mode": "raw", "raw": "{\n  \"context\": \"disk full on node-1\"\n}" } } },
-        { "name": "RAG index", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{ai}}/v1/rag/index", "body": { "mode": "raw", "raw": "{}" } } },
+        { "name": "RAG documents", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{ai}}/v1/rag/documents", "body": { "mode": "raw", "raw": "{\n  \"id\": \"runbook-1\",\n  \"text\": \"disk full runbook: clean /var/log and rotate old logs to free space\",\n  \"metadata\": {\"kind\": \"runbook\"}\n}" } } },
         { "name": "RAG search", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{ai}}/v1/rag/search", "body": { "mode": "raw", "raw": "{\n  \"query\": \"disk full\",\n  \"top_k\": 3\n}" } } },
         { "name": "Analytics (DuckDB)", "request": { "method": "GET", "url": "{{ai}}/v1/analytics" } },
         {

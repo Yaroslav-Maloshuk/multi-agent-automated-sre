@@ -2,7 +2,7 @@
 # ─────────────────────────────────────────────────────────────────────────
 # E2E smoke test — proves the full control plane responds end to end:
 #   Go gateway (REST + SSE + Templ dashboard) → AI gateway (chat,
-#   embeddings, RAG index/search, structured, DSPy, analytics, evals).
+#   embeddings, RAG documents/search, structured, DSPy, analytics, evals).
 #
 # Usage:   bash tests/e2e/smoke.sh [AI_PORT]
 # Pre:     `make ai` running (or docker compose up --build).
@@ -48,12 +48,10 @@ check "structured" '"root_cause"' \
   "$(json "${AI_URL}/v1/structured" -d '{"prompt":"log_analyzer: diagnose","schema":{"properties":{"root_cause":{"type":"string"}}}}')"
 check "dspy plan" '"owner"' \
   "$(json "${AI_URL}/v1/dspy/plan" -d '{"context":"disk full on node-1"}')"
-check "rag index" '"pages"' \
-  "$(json "${AI_URL}/v1/rag/index" -d '{}')"
-check "rag search" '"hits"' \
-  "$(json "${AI_URL}/v1/rag/search" -d '{"query":"no space left on device","top_k":3}')"
 check "rag documents" '"indexed_stores"' \
   "$(json "${AI_URL}/v1/rag/documents" -d '{"id":"smoke_doc","text":"RESOLVED INCIDENT: disk full on node-1; root cause: log rotation; fix: cleanup","metadata":{"kind":"postmortem"}}')"
+check "rag search" '"hits"' \
+  "$(json "${AI_URL}/v1/rag/search" -d '{"query":"no space left on device","top_k":3}')"
 check "analytics" '"retrieval_recall"' "$(curl -s -m 5 "${AI_URL}/v1/analytics")"
 check "eval" '"faithfulness"' \
   "$(json "${AI_URL}/v1/eval" -d '{"questions":["disk full?"],"answers":["clean /var/log"],"contexts":[["clean /var/log"]],"ground_truths":[["clean /var/log"]]}')"

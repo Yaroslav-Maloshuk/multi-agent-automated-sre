@@ -6,13 +6,13 @@ Python/FastAPI gateway that owns the AI/LLM slice of the stack.
 |---|---|
 | LLM routing | LiteLLM → OpenAI / Anthropic / vLLM / Ray Serve / Candle |
 | Structured calling | Instructor + Outlines + DSPy (pydantic fallback) |
-| Embeddings | sentence-transformers (local) / provider API, offline hash fallback |
+| Embeddings | deterministic offline hash embeddings (no weights required) |
 | Chunking | Chonkie (RecursiveChunker), offline fallback splitter |
 | Semantic store | Qdrant |
 | Vector table | LanceDB |
 | Vectorless RAG | SQLite + PageIndex (term-frequency, BM25-style) |
 | Retrieval fusion | Reciprocal Rank Fusion across all three stores |
-| Ingestion / ETL | Crawl4AI → chunk → embed → index; DuckDB analytics warehouse |
+| Ingestion | raw text documents → chunk → embed → index; DuckDB analytics warehouse |
 | Evaluation | RAGAS (faithfulness / relevancy / recall), offline lexical fallback |
 | Streaming | SSE (`/v1/events/stream`, streaming chat) |
 
@@ -26,7 +26,7 @@ uv run uvicorn ai.main:app --port 8002
 Optional extras (lazy-loaded, never required for the core):
 
 ```bash
-uv sync --extra all        # litellm, instructor, outlines, dspy, torch/embeddings, qdrant, lancedb, crawl4ai, ragas
+uv sync --extra all        # litellm, instructor, outlines, dspy, qdrant, lancedb, ragas
 ```
 
 ## Test / lint

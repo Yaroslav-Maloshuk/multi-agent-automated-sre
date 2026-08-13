@@ -259,7 +259,7 @@ pub fn build_router(cfg: &WorkerConfig) -> Box<dyn Llm> {
 
 pub fn build_embedding_fn(cfg: &WorkerConfig) -> Option<EmbeddingFn> {
     // EMBEDDING_URL wins; otherwise fall back to the AI gateway's
-    // `/v1/embeddings` (sentence-transformers) when the `ai` provider is set.
+    // `/v1/embeddings` (deterministic offline hashes) when the `ai` provider is set.
     let url = cfg
         .embedding_url
         .clone()

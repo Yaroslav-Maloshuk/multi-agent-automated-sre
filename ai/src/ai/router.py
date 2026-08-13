@@ -4,13 +4,13 @@ Endpoints mirror the OpenAI shape where it makes sense so the SRE agents can
 drop in the gateway as their LLM/embedding base URL:
 
 - `POST /v1/chat/completions` (stream via SSE when `stream=true`)
-- `POST /v1/embeddings`
+- `POST /v1/embeddings`         (offline deterministic hash embeddings)
 - `POST /v1/structured`        (Instructor/Outlines/DSPy constrained JSON)
 - `GET  /v1/events/stream`     (server-sent events for long-running jobs)
 - `POST /v1/rag/search`        (hybrid: Qdrant + LanceDB + PageIndex, RRF)
-- `POST /v1/rag/index`         (ETL trigger)
+- `POST /v1/rag/documents`     (document ingestion for the hybrid stores)
 - `GET  /v1/analytics`         (DuckDB warehouse)
-- `POST /v1/eval`              (RAGAS metrics)
+- `POST /v1/eval`              (RAGAS metrics, lexical fallback when absent)
 """
 
 from __future__ import annotations
@@ -23,8 +23,7 @@ from fastapi import APIRouter, BackgroundTasks, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from .etl import ETLResult, Warehouse, index_text_doc
-from .etl import run as run_etl
+from .etl import Warehouse, index_text_doc
 from .rag import PageIndex
 from .routing import available_providers, complete, embed, stream
 from .structured import dspy_plan, extract
@@ -52,10 +51,6 @@ class StructuredRequest(BaseModel):
 class SearchRequest(BaseModel):
     query: str
     top_k: int = 5
-
-
-class IndexRequest(BaseModel):
-    urls: list[str] = Field(default_factory=list)
 
 
 class DocumentRequest(BaseModel):
@@ -114,7 +109,7 @@ async def embeddings(body: dict[str, Any]) -> dict[str, Any]:
     return {
         "object": "list",
         "data": [{"object": "embedding", "index": i, "embedding": v} for i, v in enumerate(vectors)],
-        "model": "sentence-transformers",
+        "model": "hash",
     }
 
 
@@ -142,13 +137,6 @@ async def rag_search(req: SearchRequest, background: BackgroundTasks) -> dict[st
         "query": req.query,
         "hits": [{"text": h.text, "score": round(h.score, 4), "source": h.source} for h in hits],
     }
-
-
-@router.post("/v1/rag/index")
-async def rag_index(req: IndexRequest) -> dict[str, ETLResult | int]:
-    index = _get_index()
-    result = await run_etl(urls=req.urls or None, page_index=index, warehouse=_get_warehouse())
-    return {"result": result, "pages": len(index)}
 
 
 @router.post("/v1/rag/documents")

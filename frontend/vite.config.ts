@@ -4,12 +4,16 @@ import react from "@vitejs/plugin-react";
 
 async function resolveProxyTarget(): Promise<string> {
   if (process.env.VITE_PROXY_TARGET) return process.env.VITE_PROXY_TARGET;
-  try {
-    await lookup("backend");
-    return "http://backend:8000";
-  } catch {
-    return "http://localhost:8000";
+  // `gateway` is the compose service name; `backend` was the legacy one.
+  for (const host of ["gateway", "backend"]) {
+    try {
+      await lookup(host);
+      return `http://${host}:8000`;
+    } catch {
+      // not resolvable on this network — try the next candidate
+    }
   }
+  return "http://localhost:8000";
 }
 
 export default defineConfig(async () => {

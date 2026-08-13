@@ -89,8 +89,28 @@ _local = _LocalProvider()
 async def _via_litellm(model: str, messages: list[dict[str, Any]]) -> str:
     import litellm  # heavy, lazy
 
-    resp = await litellm.acompletion(model=model, messages=messages, max_tokens=2048)
+    kwargs: dict[str, Any] = {"model": model, "messages": messages, "max_tokens": 2048}
+    base = _litellm_base(model)
+    if base:
+        kwargs["api_base"] = base
+    resp = await litellm.acompletion(**kwargs)
     return str(resp.choices[0].message.content)
+
+
+def _litellm_base(model: str) -> str | None:
+    """Resolve an api_base for the in-repo serving tiers (Candle / vLLM / Ray),
+    or the optional LiteLLM proxy. `local` and cloud providers route directly."""
+    s = get_settings()
+    if s.proxy_url:
+        return s.proxy_url.rstrip("/")
+    provider, _ = parse_model(model)
+    if provider == "candle":
+        return s.candle_url.rstrip("/") + "/v1"
+    if provider == "vllm":
+        return s.vllm_url.rstrip("/") + "/v1"
+    if provider == "ray":
+        return s.ray_url.rstrip("/") + "/v1"
+    return None
 
 
 async def complete(model: str, messages: list[dict[str, Any]]) -> str:
@@ -122,25 +142,23 @@ async def stream(model: str, messages: list[dict[str, Any]]) -> AsyncIterator[st
             yield token
         return
 
-    async for chunk in litellm.acompletion(model=model, messages=messages, stream=True):
+    kwargs: dict[str, Any] = {"model": model, "messages": messages, "stream": True}
+    base = _litellm_base(model)
+    if base:
+        kwargs["api_base"] = base
+    async for chunk in litellm.acompletion(**kwargs):
         delta = chunk.choices[0].delta
         if delta and delta.content:
             yield str(delta.content)
 
 
 async def embed(texts: list[str]) -> list[list[float]]:
-    """Embeddings via sentence-transformers; falls back to a hash embedding.
+    """Deterministic offline embeddings (bag-of-ngrams, 384-dim).
 
-    The fallback is deterministic and locally computable so retrieval tests
-    never need torch or network access.
+    No model weights required — retrieval and ingestion stay testable and
+    deterministic without any ML dependencies or network access.
     """
-    try:
-        from sentence_transformers import SentenceTransformer
-
-        st = SentenceTransformer(get_settings().embedding_model)
-        return st.encode(texts).tolist()  # type: ignore[union-attr]
-    except ImportError:
-        return [hash_embedding(t, dim=384) for t in texts]
+    return [hash_embedding(t, dim=384) for t in texts]
 
 
 def hash_embedding(text: str, dim: int = 384) -> list[float]:

@@ -10,7 +10,10 @@ from .router import router
 app = FastAPI(
     title="auto-sre AI gateway",
     version=__version__,
-    description="LiteLLM routing, structured calling (Instructor/Outlines/DSPy), hybrid RAG, ETL and RAGAS evals.",
+    description=(
+        "LiteLLM routing, structured calling (Instructor/Outlines/DSPy), hybrid RAG, "
+        "document ingestion + DuckDB analytics, RAGAS evals."
+    ),
 )
 app.include_router(router, prefix="")
 

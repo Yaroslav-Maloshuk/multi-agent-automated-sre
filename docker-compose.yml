@@ -11,7 +11,6 @@
 # React command center.
 #
 # Optional profiles:
-#   --profile local-llm    Candle (Rust, Python-free) OpenAI-compatible endpoint
 #   --profile llm-routing  LiteLLM proxy on :4000 in front of every provider
 #   --profile gpu-llm      vLLM (:8001) + Ray Serve serving the model (:8002) + Ray dashboard (:8265)
 # ─────────────────────────────────────────────────────────────────────────
@@ -122,7 +121,7 @@ services:
       LLM_PROVIDER: ${LLM_PROVIDER:-local}
       AI_URL: http://ai:8002/v1
       AI_MODEL: ${AI_MODEL:-local/Qwen/Qwen2.5-3B-Instruct}
-      CANDLE_URL: http://inference:11434
+      CANDLE_URL: http://inference:11434/v1
       EMBEDDING_URL: ${EMBEDDING_URL:-}
       DOCKER_SANDBOX_IMAGE: auto-sre/sandbox:dev
     env_file:
@@ -135,18 +134,31 @@ services:
         condition: service_healthy
       gateway:
         condition: service_started
+      sandbox-image:
+        condition: service_completed_successfully
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
 
+  # One-shot builder: ensures the isolated agent sandbox image exists before
+  # the worker starts (the worker only pulls / reuses it, it never builds).
+  sandbox-image:
+    image: docker:27-cli
+    container_name: auto-sre-sandbox-image
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./sandbox:/ctx:ro
+    command: ["sh", "-c", "docker image inspect auto-sre/sandbox:dev >/dev/null 2>&1 || docker build -t auto-sre/sandbox:dev /ctx"]
+
+  # Candle inference is part of the default stack so `docker compose up` gives
+  # a stack that can actually reason (LLM_PROVIDER=local targets it directly).
   inference:
     image: ghcr.io/auto-sre/inference:local
     build:
       context: .
       dockerfile: backend/inference/Dockerfile
     container_name: auto-sre-inference
-    profiles: ["local-llm"]
     environment:
-      HF_MODEL_ID: ${HF_MODEL_ID:-Qwen/Qwen2.5-1.5B-Instruct}
+      HF_MODEL_ID: ${HF_MODEL_ID:-Qwen/Qwen2.5-3B-Instruct}
       PORT: "11434"
       MAX_SEQ_LEN: "2048"
     volumes:
@@ -166,6 +178,7 @@ services:
       AI_LANCEDB_PATH: /data/lancedb
       AI_SQLITE_PATH: /data/vectorless.db
       AI_VLLM_URL: http://vllm:8001
+      AI_RAY_URL: http://ray:8001
       AI_CANDLE_URL: http://inference:11434
     env_file:
       - path: .env
@@ -269,9 +282,9 @@ services:
     depends_on:
       - gateway
     ports:
-      - "3000:80"
+      - "3000:5173"
     environment:
-      VITE_API_BASE_URL: http://localhost:8000/api/v1
+      VITE_PROXY_TARGET: http://gateway:8000
 
 volumes:
   nats-data:

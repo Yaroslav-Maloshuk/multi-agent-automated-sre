@@ -17,11 +17,14 @@ class Settings(BaseSettings):
     anthropic_model: str = "claude-sonnet-4-20250514"
     vllm_url: str = "http://vllm:8001"
     vllm_model: str = "Qwen/Qwen2.5-3B-Instruct"
+    ray_url: str = "http://ray:8001"
     candle_url: str = "http://candle:11434"
     candle_model: str = "Qwen/Qwen2.5-3B-Instruct"
 
-    # Local embedding model (sentence-transformers), lazily loaded.
-    embedding_model: str = "BAAI/bge-small-en-v1.5"
+    # Optional LiteLLM proxy base (http://litellm:4000). When set, every
+    # non-`local` chat/stream call is routed through the proxy instead of
+    # reaching the provider directly (proxy model names apply).
+    proxy_url: str = ""
 
     # Retrieval endpoints.
     qdrant_url: str = "http://localhost:6333"

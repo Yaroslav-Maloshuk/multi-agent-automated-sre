@@ -1,7 +1,7 @@
 [project]
 name = "auto-sre-ai"
 version = "1.0.0"
-description = "AI/LLM gateway for the multi-agent SRE workspace: LiteLLM routing, structured calling (Instructor/Outlines/DSPy), hybrid RAG (Qdrant + LanceDB + SQLite PageIndex), ETL (Crawl4AI + DuckDB), RAGAS evals."
+description = "AI/LLM gateway for the multi-agent SRE workspace: LiteLLM routing, structured calling (Instructor/Outlines/DSPy), hybrid RAG (Qdrant + LanceDB + SQLite PageIndex), document ingestion + DuckDB analytics, RAGAS evals."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -22,19 +22,15 @@ routing = [
     "outlines>=0.1",
 ]
 dspy = ["dspy-ai>=2.5"]
-ml = ["sentence-transformers>=3.3"]
 vector = ["qdrant-client>=1.12", "lancedb>=0.17"]
-ingest = ["crawl4ai>=0.6"]
 eval = ["ragas>=0.2"]
 all = [
     "litellm>=1.55",
     "instructor>=1.6",
     "outlines>=0.1",
     "dspy-ai>=2.5",
-    "sentence-transformers>=3.3",
     "qdrant-client>=1.12",
     "lancedb>=0.17",
-    "crawl4ai>=0.6",
     "ragas>=0.2",
 ]
 

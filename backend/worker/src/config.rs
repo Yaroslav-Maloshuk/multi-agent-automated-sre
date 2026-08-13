@@ -109,7 +109,7 @@ impl WorkerConfig {
             openai_base_url: env("OPENAI_BASE_URL", "https://api.openai.com/v1"),
             anthropic_api_key: env_opt("ANTHROPIC_API_KEY"),
             anthropic_model: env("ANTHROPIC_MODEL", "claude-sonnet-4-20250514"),
-            candle_url: env("CANDLE_URL", "http://localhost:11434"),
+            candle_url: env("CANDLE_URL", "http://localhost:11434/v1"),
             candle_model: env("CANDLE_MODEL", "Qwen/Qwen2.5-3B-Instruct"),
             ai_url: env("AI_URL", "http://localhost:8002/v1"),
             ai_model: env("AI_MODEL", "local/Qwen/Qwen2.5-3B-Instruct"),

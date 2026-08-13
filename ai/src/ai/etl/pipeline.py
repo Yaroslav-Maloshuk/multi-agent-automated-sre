@@ -1,6 +1,6 @@
-"""ETL pipeline: Crawl4AI -> Chonkie chunk -> embed -> PageIndex/vector stores
--> DuckDB warehouse. `run()` is the single entry point; every step degrades
-gracefully when optional stores are offline.
+"""Document ingestion: text -> Chonkie chunk -> embed -> PageIndex/vector
+stores -> DuckDB warehouse. `index_text_doc()` is the single entry point;
+every step degrades gracefully when optional stores are offline.
 """
 
 from __future__ import annotations
@@ -9,7 +9,6 @@ from dataclasses import dataclass
 
 from ..rag import PageIndex, chunk
 from ..routing import embed
-from .crawl import CrawledDoc, seed_docs
 from .duck import Warehouse
 
 
@@ -19,61 +18,6 @@ class ETLResult:
     chunks: int
     tokens: int
     indexed_stores: list[str]
-
-
-async def run(
-    *,
-    urls: list[str] | None = None,
-    page_index: PageIndex | None = None,
-    warehouse: Warehouse | None = None,
-    qdrant_collection: str | None = None,
-    lancedb_path: str | None = None,
-    max_pages: int = 5,
-) -> ETLResult:
-    """Ingest docs (crawl or seed), chunk, embed, index, and record to DuckDB."""
-    docs: list[CrawledDoc] = []
-    if urls:
-        for url in urls[:max_pages]:
-            docs.extend(await _crawl(url, max_pages=max_pages))
-    else:
-        docs = seed_docs()
-
-    total_chunks = 0
-    total_tokens = 0
-    indexed_stores: list[str] = []
-
-    if warehouse is None:
-        warehouse = Warehouse()
-
-    for doc in docs:
-        warehouse.record_doc(doc.doc_id, doc.url, doc.url)
-        chunks = chunk(doc.markdown, max_tokens=512, source=doc.url)
-        total_chunks += len(chunks)
-        total_tokens += sum(c.token_count for c in chunks)
-
-        if page_index is not None:
-            page_index.add(doc.doc_id, chunks)
-            indexed_stores.append("pageindex")
-
-        for c in chunks:
-            warehouse.record_chunk(doc.doc_id, c.index, c.token_count, c.text)
-
-        if lancedb_path or qdrant_collection:
-            vectors = await embed([c.text for c in chunks])
-            if qdrant_collection:
-                _index_qdrant(qdrant_collection, chunks, vectors, doc.doc_id)
-                indexed_stores.append("qdrant")
-            if lancedb_path:
-                _index_lance(lancedb_path, chunks, vectors, doc.doc_id)
-                indexed_stores.append("lancedb")
-
-    warehouse.record_roi("etl_tokens", float(total_tokens))
-    return ETLResult(
-        docs=len(docs),
-        chunks=total_chunks,
-        tokens=total_tokens,
-        indexed_stores=sorted(set(indexed_stores)),
-    )
 
 
 async def index_text_doc(
@@ -118,12 +62,6 @@ async def index_text_doc(
         tokens=total_tokens,
         indexed_stores=sorted(set(indexed_stores)),
     )
-
-
-async def _crawl(url: str, *, max_pages: int) -> list[CrawledDoc]:
-    from .crawl import crawl
-
-    return await crawl(url, max_pages=max_pages)
 
 
 def _index_qdrant(

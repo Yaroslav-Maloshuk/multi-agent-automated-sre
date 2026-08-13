@@ -148,6 +148,7 @@ version = "1.0.0"
 dependencies = [
  "async-trait",
  "env_logger",
+ "http",
  "log",
  "pingora",
  "tokio",

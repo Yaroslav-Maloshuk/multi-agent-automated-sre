@@ -9,9 +9,11 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use http::Uri;
 use log::info;
 use pingora::prelude::*;
 use pingora::proxy::{Session, http_proxy_service};
+use pingora::http::RequestHeader;
 
 /// Upstream backends resolved from the environment at boot.
 #[derive(Clone)]
@@ -76,6 +78,17 @@ fn peer_for(upstream: Upstream, config: &RouterConfig) -> Arc<HttpPeer> {
     }
 }
 
+/// Path rewrite applied before forwarding upstream. The inference server only
+/// exposes `/v1/*` routes, so the proxy's `.../candle` chat alias must be
+/// stripped to `/v1/chat/completions` — otherwise Candle would 404 on it.
+pub(crate) fn rewrite_upstream_path(path: &str, upstream: Upstream) -> Option<String> {
+    if upstream == Upstream::Candle && path.starts_with("/v1/chat/completions/candle") {
+        Some("/v1/chat/completions".to_string())
+    } else {
+        None
+    }
+}
+
 struct SreProxy {
     config: RouterConfig,
 }
@@ -93,6 +106,23 @@ impl ProxyHttp for SreProxy {
     ) -> pingora::Result<Box<HttpPeer>> {
         let path = session.req_header().uri.path().to_string();
         Ok(Box::new((*peer_for(upstream_for(&path), &self.config)).clone()))
+    }
+
+    async fn upstream_request_filter(
+        &self,
+        session: &mut Session,
+        upstream_request: &mut RequestHeader,
+        _ctx: &mut Self::CTX,
+    ) -> pingora::Result<()> {
+        let path = session.req_header().uri.path();
+        if let Some(new_path) = rewrite_upstream_path(path, upstream_for(path)) {
+            let uri = Uri::builder()
+                .path_and_query(new_path.as_str())
+                .build()
+                .map_err(|_| pingora::Error::new(pingora::ErrorType::InternalError))?;
+            upstream_request.set_uri(uri);
+        }
+        Ok(())
     }
 }
 
@@ -131,5 +161,21 @@ mod tests {
     #[test]
     fn candle_requests_go_to_candle() {
         assert_eq!(upstream_for("/v1/chat/completions/candle"), Upstream::Candle);
+    }
+
+    #[test]
+    fn candle_path_is_rewritten_to_inference_route() {
+        assert_eq!(
+            rewrite_upstream_path("/v1/chat/completions/candle", Upstream::Candle),
+            Some("/v1/chat/completions".to_string())
+        );
+        assert_eq!(
+            rewrite_upstream_path("/v1/chat/completions", Upstream::Candle),
+            None
+        );
+        assert_eq!(
+            rewrite_upstream_path("/v1/chat/completions/candle", Upstream::Ai),
+            None
+        );
     }
 }

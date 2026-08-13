@@ -1,8 +1,8 @@
-"""ETL pipeline + DuckDB warehouse tests (offline seed corpus)."""
+"""Document ingestion + DuckDB warehouse tests (offline corpus)."""
 
 import pytest
 
-from ai.etl import Warehouse, run
+from ai.etl import Warehouse, index_text_doc
 from ai.rag import PageIndex, chunk
 
 
@@ -28,11 +28,16 @@ def test_warehouse_recall_zero_when_no_events():
 
 
 @pytest.mark.asyncio
-async def test_etl_run_indexes_pageindex_and_records_duckdb():
+async def test_ingest_indexes_pageindex_and_records_duckdb():
     idx = PageIndex(":memory:")
     wh = Warehouse()
-    result = await run(page_index=idx, warehouse=wh)
-    assert result.docs >= 1
+    result = await index_text_doc(
+        "d1",
+        "disk full runbook: clean /var/log and rotate logs",
+        page_index=idx,
+        warehouse=wh,
+    )
+    assert result.docs == 1
     assert result.chunks >= 1
     assert result.tokens > 0
     assert "pageindex" in result.indexed_stores

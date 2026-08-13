@@ -123,8 +123,21 @@ def test_remote_model_falls_back_when_litellm_is_absent():
     assert resp.json()["value"]["root_cause"]
 
 
-def test_rag_search_after_index():
-    client.post("/v1/rag/index", json={})
+def _ingest_doc(doc_id: str = "doc1") -> dict:
+    resp = client.post(
+        "/v1/rag/documents",
+        json={
+            "id": doc_id,
+            "text": "disk full runbook: clean /var/log and rotate old logs to free space",
+            "metadata": {"kind": "runbook"},
+        },
+    )
+    assert resp.status_code == 200
+    return resp.json()
+
+
+def test_rag_search_after_ingest():
+    _ingest_doc()
     resp = client.post("/v1/rag/search", json={"query": "disk full", "top_k": 3})
     assert resp.status_code == 200
     hits = resp.json()["hits"]
@@ -132,14 +145,16 @@ def test_rag_search_after_index():
     assert hits[0]["source"] == "pageindex"
 
 
-def test_rag_index_populates_pages():
-    resp = client.post("/v1/rag/index", json={})
-    assert resp.status_code == 200
-    assert resp.json()["pages"] >= 1
+def test_rag_documents_indexes_and_chunks():
+    body = _ingest_doc()
+    assert body["id"] == "doc1"
+    assert body["chunks"] >= 1
+    assert body["tokens"] > 0
+    assert "pageindex" in body["indexed_stores"]
 
 
 def test_analytics_reports_retrieval():
-    client.post("/v1/rag/index", json={})
+    _ingest_doc()
     client.post("/v1/rag/search", json={"query": "disk", "top_k": 2})
     body = client.get("/v1/analytics").json()
     assert body["retrieval_recall"] == 1.0
