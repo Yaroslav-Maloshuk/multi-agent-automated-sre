@@ -123,6 +123,7 @@ async fn finalize(ctx: &AgentContext, state: AgentState) -> AgentState {
                        "token_usage": {"input_tokens": state.token_usage.input_tokens, "output_tokens": state.token_usage.output_tokens}}),
             )
             .await;
+            learn_resolved_incident(ctx, &state).await;
         }
         GraphStatus::Failed => {
             emit_payload(
@@ -152,6 +153,46 @@ async fn finalize(ctx: &AgentContext, state: AgentState) -> AgentState {
     )
     .await;
     state
+}
+
+/// Learning loop: index a resolved incident (root cause + applied fix) into
+/// long-term memory so future planner / log-analyzer / fixer runs can retrieve
+/// it as prior art. Indexing failures degrade to a log line only.
+async fn learn_resolved_incident(ctx: &AgentContext, state: &AgentState) {
+    let learned = format!(
+        "RESOLVED INCIDENT: {}\nRoot cause: {}\nFix applied: {}\n",
+        state
+            .incident
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or("untitled"),
+        state
+            .root_cause
+            .as_ref()
+            .map(|r| r.hypothesis.as_str())
+            .unwrap_or("unknown"),
+        state
+            .patch
+            .as_ref()
+            .map(|p| p.summary.as_str())
+            .unwrap_or("unknown"),
+    );
+    let mut metadata = Map::new();
+    metadata.insert("incident_id".into(), json!(state.incident_id));
+    metadata.insert("run_id".into(), json!(state.run_id));
+    metadata.insert("outcome".into(), json!("resolved"));
+    if let Err(err) = ctx
+        .memory
+        .index_document(&format!("postmortem_{}", state.run_id), &learned, metadata)
+        .await
+    {
+        let _ = ctx
+            .emit_log(state, &format!("[graph] memory index failed: {err}"))
+            .await;
+    }
+    let _ = ctx
+        .emit_log(state, "[graph] resolved incident indexed into memory")
+        .await;
 }
 
 async fn schedule(ctx: AgentContext, token: CancellationToken, initial: AgentState) -> AgentState {
